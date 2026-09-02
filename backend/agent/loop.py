@@ -49,7 +49,7 @@ from models.message import (
     StepStartPart, StepFinishPart, TokenUsage, PlanPart, PatchPart, PatchFile,
 )
 from session.session import (
-    get_session, update_session, set_session_status, set_session_title,
+    get_session, update_session, update_session_context, set_session_status, set_session_title,
     create_assistant_message, update_message_info, save_part, get_messages,
 )
 from session.status import register_run, clear_abort
@@ -1013,17 +1013,18 @@ async def run_loop(session_id: str, user_id: str = "default") -> MessageWithPart
             _ctx_estimate = sum(_te(str(m.get("content", ""))) for m in llm_messages)
             _ctx_estimate += initial_visible_proxy_tokens
             _ctx_estimate += sum(_te(s) for s in system)  # system prompt
+            # Only context/limit change here.  The cumulative totals must be
+            # read fresh from the DB: ``session`` was loaded when this run
+            # started, so its token_usage is a stale snapshot and writing it
+            # back would erase what update_session_tokens accumulated on the
+            # previous step.
             try:
-                _ctx_limit = get_model_context_limit(model_id)
-                _tu = session.token_usage.model_dump() if session.token_usage else {}
-                _tu["context"] = _ctx_estimate
-                _tu["limit"] = _ctx_limit
-                await update_session(session_id, user_id=user_id, token_usage=_tu)
-                bus.publish(SESSION_UPDATED, {
-                    "userId": user_id,
-                    "sessionId": session_id,
-                    "token_usage": _tu,
-                })
+                await update_session_context(
+                    session_id,
+                    context=_ctx_estimate,
+                    limit=get_model_context_limit(model_id),
+                    user_id=user_id,
+                )
             except Exception:
                 pass
 
