@@ -1,81 +1,67 @@
-# Checking what the video actually says
+# 生成结果、STT 与时长质检
 
-A generated presenter often says something slightly different from the line you
-wrote. It is common, it is cheap to catch, and it is the difference between a
-publishable cut and one where the captions do not match the audio.
+生成的人物可能换词、漏词或改变时长。每段都要展示结果并由用户选择，不能只看
+相似度后自动决定。
 
-Per shot:
+## 每段检查
 
 ```bash
 S=/opt/openbox/skills/video-production/scripts
 "$S/extract_audio.sh" shot1.mp4 shot1.mp3
-# share_file(file_path=".../shot1.mp3", attach=false)  -> asset_id
-# video_transcribe(action="submit", asset_id=..., idempotency_key="<slug>:shot1:stt")
+# 通过产品内文件分享获得转写输入，不在聊天中附一摞中间 mp3
 python3 "$S/compare_transcript.py" --intended "本段台词" --heard "转写结果"
 ```
 
-`attach=false` keeps the intermediate audio out of the conversation — the
-person asked for a video, not a stack of mp3 cards.
+STT 结果卡逐段给出：可播放链接、想说的、实际念出的、相似度与替换/漏念说明、
+计划秒数和实测秒数。
 
-Show them, per shot: the video, the intended line, the actual words, the
-similarity, and the notes. Then decide together.
+## 判定
 
-## Reading the verdict
+- `ok`：文本相似度达到 0.90，且没有任何长度的替换词。
+- `suspect`：相似度低于 0.90，或发现替换/漏念。单字替换也要提示，因为
+  “出片 → 出花”可能相似度很高但意思已变。
+- **时长 suspect**：`abs(actual - planned) > max(2s, planned × 25%)`。
+- 标点、空格和嗯/啊/吧等语气填充词不计入文本差异。
 
-- **`ok`** — accept it, and still show it.
-- **`suspect`** — look. It means either the similarity fell below 0.90, or a
-  substitution was found at any length. A one-character swap keeps the ratio
-  high and can invert the meaning (`出片` → `出花`), which is why a bare number
-  is not the verdict.
+文本或时长 suspect 的段在卡中标红。用户可选择只重生受影响段，也可以明确接受。
+接受时用 `state.py shot --accept "理由"` 记录理由与日期；这是 STT 豁免记录，
+不是让脚本替用户放行。字幕使用被接受的实际转写。
 
-Punctuation, spacing and filler particles (嗯、啊、吧…) are stripped before
-comparing — nobody hears them.
+## badcase 病理表
 
-## Regenerating
-
-Change only the shot that is wrong, and keep exactly one current take per shot:
-a `:v2` supersedes `:v1`, and only current takes go into the composition. The
-old take stays on disk as evidence, never in the cut. Track which is current in
-`state.py` so a later turn does not have to guess. Give it a fresh idempotency key (`:v2`),
-keep the old take, and leave every good shot alone. If the line itself was the
-problem, rewrite that line and the prompt together — the prompt carries the
-verbatim words after `@`, so they must move as a pair.
-
-Do not retry an ambiguous paid submit. If a submit timed out or the result was
-unclear, reconcile the same `job_id`; the task is durable and a second submit
-pays twice for the same shot.
-
-## Captions
-
-Captions use the **accepted actual transcript**, never the written line. That
-is the whole point of this step: it keeps the words on screen aligned with the
-words in the audio when the model changed a particle or a phrase.
-
-
-## Shot length
-
-A shot's duration is an output of its line, never an input. `plan_shots.py`
-computes each shot from its own text, at the pace *you* pass in — the piece
-decides that, not the script:
-
-| pace | chars/s | fits |
+| 症状 | 常见成因 | 预防与处理 |
 |---|---|---|
-| calm | 3.4 | meditation, bedtime, anything soothing |
-| conversational | 4.0 | the default; how-to, explainer, review |
-| energetic | 4.6 | hooks, promos, countdowns |
+| 换人、人物不对、没有采用上传视频 | 人物锚缺失；重写场景过猛；模型/档位不支持参考 | 优先原始 person 视频；每段同一人物件套；不兼容时让用户选模型或素材 |
+| 说错话、说梦话、胡嘴 | `@` 边界不清；台词过长；后面还接画面描述 | `@` 后逐字台词并立刻换行；按选定模型边界拆段；逐段 STT |
+| 打错字、双层字幕 | 生成端烧字幕 | prompt 明写“无字幕”；后期只烧录 STT 实际词 |
+| 背景自己变化 | 场景无锚；质感和装修描述堆料 | 使用 scene 素材或逐字一致的文字基底；场景描述限制一两句 |
+| 发型或形象变化 | 单图角度不足；用生成帧反复做锚导致漂移累积 | 人物视频比单图稳；始终回到用户原始素材，不用生成帧续锚 |
 
-Broadcast news reads at 280–300/minute (≈4.7–5.0/s), which is the ceiling for
-comfortable listening. Every shot also needs a breath at each end, which is why
-the planner never packs a line in tight.
+## 重生
 
-Measured 2026-09-01, on a run that divided "30 seconds" by five shots:
+只重生有问题的段，并使用新的幂等版本。A `:v2` supersedes `:v1`; one shot
+has one current take, and only current accepted takes enter composition. 保留旧文件作为
+证据，但不要把同一句的两个 take 都剪进成片。
 
-| shot | chars | asked | rate | result |
-|---|---|---|---|---|
-| 1 | 13 | 5s | 2.6/s | model padded with words nobody wrote |
-| 3 | 31 | 6s | 5.2/s | rushed |
-| 4 | 32 | 6s | 5.3/s | rushed |
+真正失败先准备一次 prompt 与参数都不变的重试，以区分生成方差和 prompt 问题。
+重试仍然付费，提交前必须重新报段数、秒数、模型、分辨率和预计费用，得到确认。
+超时或状态不明不算失败：继续查询同一个已记录任务，不能重复付费提交。
 
-The same script planned per-line needs 40s, every shot landing at 3.4–4.0/s.
-So a "30-second" request gets either a 40-second video or a shorter script —
-those are the two honest options, and the person picks which.
+## 合成验收
+
+- 字幕来自每段被接受的实际转写，不来自原稿。
+- 每段必须有音轨；成片也必须有音轨。
+- 成片实测时长应接近各段实测总和，容差 `max(2s, 5%)`。
+- `state.py check --final final.mp4` 会列出这些问题，但始终返回 0。
+- 最终文件必须经产品内 `share_file` 返回可播放/下载结果，才算交付。
+
+## 计划时长
+
+| pace | chars/s | 适用 |
+|---|---:|---|
+| calm | 3.4 | 舒缓解释、睡前内容 |
+| conversational | 4.0 | 默认教程、评测、科普 |
+| energetic | 4.6 | 钩子、促销、倒数 |
+
+每段时长从自己的台词计算，不能用总时长除以段数。模型给多了会填词，给少了会赶
+语速。若诚实时长超出用户目标，只能缩稿或明确告诉用户会更长。
