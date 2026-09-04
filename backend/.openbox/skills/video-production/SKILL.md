@@ -2,6 +2,7 @@
 name: video-production
 description: Make a vertical spoken-person short video from a topic or script — write the lines, generate each shot with a consistent presenter, check what was actually said, and compose a subtitled or clean cut. Use for 口播/短视频/成片/带货脚本 work, or whenever someone wants a talking-head video built end to end.
 allowed-tools:
+  - question
   - video_generate
   - video_transcribe
   - image_gen
@@ -16,7 +17,7 @@ Bundled scripts run at `/opt/openbox/skills/video-production/scripts/`. Set `S=/
 
 ## Hard rules
 
-1. There are exactly three required `question` cards: finished script, complete shots + price, and STT results. Put every reviewable detail in the message before its card. If `question` is unavailable, stop and explain; submit nothing.
+1. There are exactly three required `question` tool calls: finished script, complete shots + price, and STT results. A Markdown heading, table, or request for confirmation is not a card. Put every reviewable detail in prose before invoking the tool. If `question` is unavailable, stop and explain; submit nothing.
 2. A plan, state hash, or successful estimate is not approval. Before the person chooses “可以” on the current complete shot card, make zero paid submits. Script, segment, prompt, material, model, or resolution changes invalidate affected planning and cost confirmation.
 3. The person's selected model and resolution are creative premises. Read `person_selected_model` and plan within its limits. Never silently change the model or tier. If none is selected, use and disclose the registry default.
 4. Use supplied material first. With none, use one textual `全片一致的画面基底`, byte for byte in every prompt. Call `image_gen` only when the person explicitly asks for a generated reference; never auto-create an anchor or reuse a generated frame as one.
@@ -42,7 +43,7 @@ Use `creator_context(action="get_user_context")`; empty is normal. Propose at mo
 
 ### 2. Write and confirm the whole script — card 1
 
-Write pure spoken lines in the person's voice: hook → development → turn → close. If duration was not supplied, draft 45–60s first; do not ask duration before showing a usable script. Print the complete script, then one `question` card with:
+Write pure spoken lines in the person's voice: hook → development → turn → close. If duration was not supplied, draft 45–60s first; do not ask duration before showing a usable script. Print the complete script, then invoke the `question` tool once with:
 
 - 时长：`可以` / `短到约 30 秒` / `长到 60–75 秒` / `需要修改`
 - 字幕：`配字幕（默认）` / `不配字幕`
@@ -79,15 +80,15 @@ Read the zero-exit advice. `镜头跟随` is valid for a deliberate walking shot
 
 ### 5. Estimate and show complete shots + price — card 2
 
-Run `action="estimate"` for every exact request and sum it. Before the card show, without abbreviation:
+Run `action="estimate"` for every exact request and sum any money amounts it actually returns. Before invoking the card, show without abbreviation:
 
 - every complete line and every complete model prompt, character for character;
 - each shot's seconds and the honest total; call out mismatch with requested duration;
 - every image/video and the shots using it, or zero-material textual-base wording;
 - `按你选的 <模型> <分辨率> 规划`, or the disclosed registry-default wording;
-- shot count, total paid seconds, summed estimate, and any proposed compatibility change with reason.
+- shot count, total paid seconds, planned cost, and any proposed compatibility change with reason. If `estimate` validates parameters but returns no currency amount, say `预计费用暂不可得（estimate 未返回金额）` and stop; never substitute "已产生费用 0 元" for the planned quote. A separately documented dated rate may be shown only as a clearly labelled reference estimate.
 
-Then card 2: `可以` / `修改拆段或 prompt` / `更换模型、分辨率或素材`. This combines shots and spend; no separate fee card. Until the person chooses “可以”, make zero paid submits. Record `python3 "$S/state.py" confirm --slug <slug> --kind shots --note "拆段、prompt、素材、模型、分辨率与费用已确认"`.
+Copy every full line, full prompt, seconds, and material assignment into the user-visible response itself; tool-call details do not count as display. Then invoke card 2: `可以` / `修改拆段或 prompt` / `更换模型、分辨率或素材`. This combines shots and spend; no separate fee card. Until the person chooses “可以”, make zero paid submits. Record `python3 "$S/state.py" confirm --slug <slug> --kind shots --note "拆段、prompt、素材、模型、分辨率与费用已确认"`.
 
 ### 6. Submit together and record immediately
 

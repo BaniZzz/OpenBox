@@ -251,6 +251,17 @@ def test_skill_contains_all_u1_to_u9_user_experience_contracts():
     assert "person_selected_model" in text and "Never silently change the model or tier" in flowed
 
 
+def test_skill_can_invoke_real_question_cards_and_never_fakes_a_quote():
+    text = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+    frontmatter = text.split("---", 2)[1]
+
+    assert "  - question\n" in frontmatter
+    assert "A Markdown heading, table, or request for confirmation is not a card" in text
+    assert "预计费用暂不可得（estimate 未返回金额）" in text
+    assert 'never substitute "已产生费用 0 元" for the planned quote' in text
+    assert "tool-call details do not count as display" in text
+
+
 def test_lint_still_flags_uri_but_cli_exits_zero(tmp_path):
     prompt = tmp_path / "prompt.txt"
     prompt.write_text("参考 https://example.com/a.png", encoding="utf-8")
