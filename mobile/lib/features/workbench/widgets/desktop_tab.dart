@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,10 +13,13 @@ import '../../../shared/appearance/tokens.dart';
 import '../../../shared/appearance/type_scale.dart';
 import '../../../shared/i18n/i18n.dart';
 import '../../../shared/models/json.dart';
+import '../../../shared/models/workspace.dart';
 import '../../../shared/widgets/spinner.dart';
+import '../../workspace/state/active_workspace_store.dart';
+import '../api/workbench_api.dart';
 import 'desktop_bridge.dart';
 
-enum _Phase { loading, connected, error, closed }
+enum _Phase { loading, connected, error, closed, provision, provisionFailed }
 
 /// 云桌面 tab (web `DesktopTab.tsx`): the sandbox's Wuying cloud desktop.
 /// The Web SDK is JS-only, so mobile hosts the same bootstrap in a WebView
@@ -46,6 +50,9 @@ class _DesktopTabState extends ConsumerState<DesktopTab> {
   bool _fullscreen = false;
   bool _keyboard = false;
   bool _alive = true;
+  int _generation = 0;
+  String _channelState = '';
+  Timer? _channelTimer;
   WebViewController? _webView;
 
   @override
@@ -57,6 +64,8 @@ class _DesktopTabState extends ConsumerState<DesktopTab> {
   @override
   void dispose() {
     _alive = false;
+    _generation += 1;
+    _channelTimer?.cancel();
     // Leaving mid-fullscreen must not strand the rest of the app sideways.
     if (_fullscreen) unawaited(_restoreChrome());
     super.dispose();
@@ -67,12 +76,13 @@ class _DesktopTabState extends ConsumerState<DesktopTab> {
     await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   }
 
-  /// Poll `/api/desktop/ticket` through its 202-pending window
-  /// (web `fetchTicket`: 30 attempts × 3s).
-  Future<Map<String, dynamic>> _fetchTicket() async {
+  bool _isCurrent(int generation) => _alive && generation == _generation;
+
+  /// Poll `/api/desktop/ticket` after provisioning has reached running.
+  Future<Map<String, dynamic>> _fetchTicket(int generation) async {
     final dio = ref.read(apiDioProvider);
     var taskId = '';
-    for (var attempt = 0; attempt < 30 && _alive; attempt++) {
+    for (var attempt = 0; attempt < 30 && _isCurrent(generation); attempt++) {
       final resp = await dio.get<Map<String, dynamic>>(
         '/api/desktop/ticket',
         queryParameters: taskId.isEmpty ? null : {'task_id': taskId},
@@ -85,50 +95,185 @@ class _DesktopTabState extends ConsumerState<DesktopTab> {
     throw TimeoutException('desktop ticket');
   }
 
+  Future<void> _waitDesktopRunning(int generation) async {
+    final api = ref.read(workbenchApiProvider);
+    for (var attempt = 0; attempt < 120 && _isCurrent(generation); attempt++) {
+      final status = await api.desktopStatus();
+      if (!_isCurrent(generation)) return;
+      _setChannel(status.channel?.state ?? '');
+      if (status.state == 'running') return;
+      if (status.state == 'failed') {
+        throw _ProvisionFailed(status.error ?? '');
+      }
+      if (status.state == 'not_provisioned') {
+        throw const _NotProvisioned();
+      }
+      setState(() {
+        _detail = ref
+            .read(i18nProvider)
+            .t(
+              status.state == 'assigning'
+                  ? 'workbench:desktop.assigning'
+                  : 'workbench:desktop.provisioning',
+            );
+      });
+      await Future<void>.delayed(const Duration(seconds: 5));
+    }
+    if (_isCurrent(generation)) throw TimeoutException('desktop provision');
+  }
+
   Future<void> _connect() async {
+    final generation = ++_generation;
+    _channelTimer?.cancel();
     try {
-      final ticket = await _fetchTicket();
-      if (!_alive) return;
+      // An older/shared backend may not expose status; ticket remains the
+      // authoritative fallback in that case.
+      try {
+        final status = await ref.read(workbenchApiProvider).desktopStatus();
+        if (!_isCurrent(generation)) return;
+        _setChannel(status.channel?.state ?? '');
+        if (status.state == 'not_provisioned' && status.mode == 'per_user') {
+          setState(() => _phase = _Phase.provision);
+          return;
+        }
+        if (status.state == 'failed') {
+          throw _ProvisionFailed(status.error ?? '');
+        }
+        if (status.state.isNotEmpty &&
+            status.state != 'running' &&
+            status.state != 'not_provisioned') {
+          setState(() {
+            _detail = ref
+                .read(i18nProvider)
+                .t(
+                  status.state == 'assigning'
+                      ? 'workbench:desktop.assigning'
+                      : 'workbench:desktop.provisioning',
+                );
+          });
+          await _waitDesktopRunning(generation);
+        }
+      } on _ProvisionFailed {
+        rethrow;
+      } on _NotProvisioned {
+        rethrow;
+      } on TimeoutException {
+        rethrow;
+      } catch (_) {
+        // Status is a progressive enhancement for shared/older deployments.
+      }
+
+      final ticket = await _fetchTicket(generation);
+      if (!_isCurrent(generation)) return;
       final controller = WebViewController();
       await controller.setJavaScriptMode(JavaScriptMode.unrestricted);
       await controller.setBackgroundColor(Colors.transparent);
-      await controller.addJavaScriptChannel('Bossip',
-          onMessageReceived: (msg) {
-        if (!_alive) return;
-        final data = jsonDecode(msg.message) as Map<String, dynamic>;
-        setState(() {
-          switch (asString(data['event'])) {
-            case 'connected':
-              _phase = _Phase.connected;
-            case 'disconnected':
-              _phase = _Phase.closed;
-            case 'error':
-              _phase = _Phase.error;
-              final detail = asString(data['detail']) ?? '';
-              _detail = detail == 'sdk'
-                  ? ref.read(i18nProvider).t('workbench:desktop.sdkFailed')
-                  : detail;
+      await controller.addJavaScriptChannel(
+        'Bossip',
+        onMessageReceived: (msg) {
+          if (!_isCurrent(generation)) return;
+          final dynamic decoded;
+          try {
+            decoded = jsonDecode(msg.message);
+          } on FormatException {
+            return;
           }
-        });
-      });
-      await controller.loadHtmlString(desktopBootstrapHtml(ticket),
-          baseUrl: 'https://bossip.desktop');
-      if (!_alive) return;
+          if (decoded is! Map<String, dynamic>) return;
+          final data = decoded;
+          setState(() {
+            switch (asString(data['event'])) {
+              case 'connected':
+                _phase = _Phase.connected;
+                _detail = '';
+                _startChannelPolling(generation);
+              case 'disconnected':
+                _phase = _Phase.closed;
+                _channelTimer?.cancel();
+              case 'error':
+                _phase = _Phase.error;
+                _channelTimer?.cancel();
+                final detail = asString(data['detail']) ?? '';
+                _detail = detail == 'sdk'
+                    ? ref.read(i18nProvider).t('workbench:desktop.sdkFailed')
+                    : detail;
+            }
+          });
+        },
+      );
+      await controller.loadHtmlString(
+        desktopBootstrapHtml(ticket),
+        baseUrl: 'https://bossip.desktop',
+      );
+      if (!_isCurrent(generation)) return;
       setState(() => _webView = controller);
+    } on _ProvisionFailed catch (error) {
+      if (_isCurrent(generation)) {
+        setState(() {
+          _phase = _Phase.provisionFailed;
+          _detail = error.detail;
+        });
+      }
+    } on _NotProvisioned {
+      if (_isCurrent(generation)) setState(() => _phase = _Phase.provision);
     } on TimeoutException {
-      if (_alive) {
+      if (_isCurrent(generation)) {
         setState(() {
           _phase = _Phase.error;
           _detail = ref.read(i18nProvider).t('workbench:desktop.error');
         });
       }
     } catch (e) {
-      if (!_alive) return;
+      if (!_isCurrent(generation)) return;
+      final error = e is DioException ? ApiError.fromDio(e) : e;
       setState(() {
         _phase = _Phase.error;
-        _detail = e is ApiError || e.toString().contains('503')
+        _detail = error is ApiError || error.toString().contains('503')
             ? ref.read(i18nProvider).t('workbench:desktop.unavailable')
             : ref.read(i18nProvider).t('workbench:desktop.error');
+      });
+    }
+  }
+
+  void _setChannel(String state) {
+    if (_channelState == state || !_alive) return;
+    setState(() => _channelState = state);
+  }
+
+  void _startChannelPolling(int generation) {
+    _channelTimer?.cancel();
+    _channelTimer = Timer.periodic(const Duration(seconds: 30), (_) async {
+      if (!_isCurrent(generation) || _phase != _Phase.connected) return;
+      try {
+        final status = await ref.read(workbenchApiProvider).desktopStatus();
+        if (_isCurrent(generation)) {
+          _setChannel(status.channel?.state ?? '');
+        }
+      } catch (_) {
+        if (_isCurrent(generation)) _setChannel('down');
+      }
+    });
+  }
+
+  Future<void> _provision() async {
+    final i18n = ref.read(i18nProvider);
+    setState(() {
+      _phase = _Phase.loading;
+      _detail = i18n.t('workbench:desktop.provisioning');
+      _webView = null;
+    });
+    try {
+      await ref.read(workbenchApiProvider).provisionDesktop();
+      if (_alive) unawaited(_connect());
+    } catch (error) {
+      if (!_alive) return;
+      final normalized = error is DioException
+          ? ApiError.fromDio(error)
+          : error;
+      setState(() {
+        _phase = _Phase.error;
+        _detail = normalized is ApiError
+            ? i18n.t('workbench:desktop.unavailable')
+            : i18n.t('workbench:desktop.error');
       });
     }
   }
@@ -159,9 +304,10 @@ class _DesktopTabState extends ConsumerState<DesktopTab> {
     setState(() => _fullscreen = on);
     widget.onImmersive?.call(on);
     if (on) {
-      await SystemChrome.setPreferredOrientations(
-        [DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight],
-      );
+      await SystemChrome.setPreferredOrientations([
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]);
       await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     } else {
       await _restoreChrome();
@@ -178,13 +324,16 @@ class _DesktopTabState extends ConsumerState<DesktopTab> {
   }
 
   String _statusText(I18nState i18n) => switch (_phase) {
-        _Phase.connected => _control
-            ? i18n.t('workbench:desktop.controlOn')
-            : i18n.t('workbench:desktop.readonly'),
-        _Phase.loading => i18n.t('workbench:desktop.loading'),
-        _Phase.error => i18n.t('workbench:desktop.error'),
-        _Phase.closed => i18n.t('workbench:desktop.closed'),
-      };
+    _Phase.connected =>
+      _control
+          ? i18n.t('workbench:desktop.controlOn')
+          : i18n.t('workbench:desktop.readonly'),
+    _Phase.loading => i18n.t('workbench:desktop.loading'),
+    _Phase.error => i18n.t('workbench:desktop.error'),
+    _Phase.closed => i18n.t('workbench:desktop.closed'),
+    _Phase.provision => i18n.t('workbench:desktop.provision'),
+    _Phase.provisionFailed => i18n.t('workbench:desktop.provisionFailed'),
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -197,55 +346,95 @@ class _DesktopTabState extends ConsumerState<DesktopTab> {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(14, 8, 10, 6),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _StatusDot(phase: _phase),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  _statusText(i18n),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: FontSizes.sm, color: t.n700),
-                ),
-              ),
-              if (_phase == _Phase.connected) ...[
-                // Only while the viewer holds the pointer: an on-stream
-                // keyboard over a read-only desktop types nowhere.
-                if (_control)
-                  _IconAction(
-                    icon: Icons.keyboard_outlined,
-                    label: i18n.t('workbench:desktop.keyboard'),
-                    active: _keyboard,
-                    onTap: _toggleKeyboard,
-                  ),
-                _IconAction(
-                  icon: Icons.fullscreen,
-                  label: i18n.t('workbench:desktop.fullscreen'),
-                  onTap: () => unawaited(_setFullscreen(true)),
-                ),
-                const SizedBox(width: 2),
-                _ControlCheckbox(
-                  on: _control,
-                  label: i18n.t('workbench:desktop.allowControl'),
-                  onTap: () => _toggleControl(!_control),
-                ),
-              ],
-              if (_phase == _Phase.error || _phase == _Phase.closed)
-                OutlinedButton(
-                  onPressed: _reconnect,
-                  style: OutlinedButton.styleFrom(
-                    side: BorderSide(color: t.hair),
-                    foregroundColor: t.n800,
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(Radii.full),
+              Row(
+                children: [
+                  _StatusDot(phase: _phase),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _statusText(i18n),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: FontSizes.sm, color: t.n700),
                     ),
                   ),
-                  child: Text(i18n.t('workbench:desktop.reconnect'),
-                      style: const TextStyle(fontSize: FontSizes.sm)),
+                  if (_channelState.isNotEmpty)
+                    _ChannelPill(state: _channelState),
+                  if (_phase == _Phase.error || _phase == _Phase.closed)
+                    OutlinedButton(
+                      onPressed: _reconnect,
+                      style: OutlinedButton.styleFrom(
+                        side: BorderSide(color: t.hair),
+                        foregroundColor: t.n800,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 4,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(Radii.full),
+                        ),
+                      ),
+                      child: Text(
+                        i18n.t('workbench:desktop.reconnect'),
+                        style: const TextStyle(fontSize: FontSizes.sm),
+                      ),
+                    ),
+                  if (_phase == _Phase.provisionFailed)
+                    OutlinedButton(
+                      onPressed: _provision,
+                      style: OutlinedButton.styleFrom(
+                        side: BorderSide(color: t.hair),
+                        foregroundColor: t.n800,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 4,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(Radii.full),
+                        ),
+                      ),
+                      child: Text(
+                        i18n.t('workbench:desktop.provisionRetry'),
+                        style: const TextStyle(fontSize: FontSizes.sm),
+                      ),
+                    ),
+                ],
+              ),
+              if (_phase == _Phase.connected) ...[
+                const SizedBox(height: 5),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  reverse: true,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      // Only while the viewer holds the pointer: an on-stream
+                      // keyboard over a read-only desktop types nowhere.
+                      if (_control)
+                        _IconAction(
+                          icon: Icons.keyboard_outlined,
+                          label: i18n.t('workbench:desktop.keyboard'),
+                          active: _keyboard,
+                          onTap: _toggleKeyboard,
+                        ),
+                      _IconAction(
+                        icon: Icons.fullscreen,
+                        label: i18n.t('workbench:desktop.fullscreen'),
+                        onTap: () => unawaited(_setFullscreen(true)),
+                      ),
+                      const SizedBox(width: 2),
+                      _ControlCheckbox(
+                        on: _control,
+                        label: i18n.t('workbench:desktop.allowControl'),
+                        onTap: () => _toggleControl(!_control),
+                      ),
+                    ],
+                  ),
                 ),
+              ],
             ],
           ),
         ),
@@ -274,6 +463,48 @@ class _DesktopTabState extends ConsumerState<DesktopTab> {
                       i18n.t('workbench:desktop.loading'),
                       style: TextStyle(fontSize: FontSizes.sm, color: t.n600),
                     ),
+                  ] else if (_phase == _Phase.provision) ...[
+                    Text(
+                      i18n.t('workbench:desktop.provision'),
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: FontSizes.base, color: t.n800),
+                    ),
+                    const SizedBox(height: 7),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 28),
+                      child: Text(
+                        i18n.t('workbench:desktop.provisionHint'),
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: FontSizes.sm,
+                          height: 1.5,
+                          color: t.n600,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    if (ref
+                            .watch(activeWorkspaceProvider)
+                            .valueOrNull
+                            ?.current
+                            ?.role
+                            .canManage ==
+                        true)
+                      FilledButton(
+                        onPressed: _provision,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: t.ink,
+                          foregroundColor: t.bg,
+                        ),
+                        child: Text(
+                          i18n.t('workbench:desktop.provisionAction'),
+                        ),
+                      )
+                    else
+                      Text(
+                        i18n.t('workbench:desktop.provisionRestricted'),
+                        style: TextStyle(fontSize: FontSizes.sm, color: t.n600),
+                      ),
                   ] else ...[
                     Text(
                       _statusText(i18n),
@@ -286,8 +517,10 @@ class _DesktopTabState extends ConsumerState<DesktopTab> {
                         child: Text(
                           _detail,
                           textAlign: TextAlign.center,
-                          style:
-                              TextStyle(fontSize: FontSizes.sm, color: t.n600),
+                          style: TextStyle(
+                            fontSize: FontSizes.sm,
+                            color: t.n600,
+                          ),
                         ),
                       ),
                     ],
@@ -334,6 +567,42 @@ class _DesktopTabState extends ConsumerState<DesktopTab> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ProvisionFailed implements Exception {
+  const _ProvisionFailed(this.detail);
+
+  final String detail;
+}
+
+class _NotProvisioned implements Exception {
+  const _NotProvisioned();
+}
+
+class _ChannelPill extends ConsumerWidget {
+  const _ChannelPill({required this.state});
+
+  final String state;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final t = context.tokens;
+    final i18n = ref.watch(i18nProvider);
+    final key = 'workbench:desktop.channel.$state';
+    final translated = i18n.t(key);
+    return Container(
+      margin: const EdgeInsets.only(right: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: t.n100,
+        borderRadius: BorderRadius.circular(Radii.full),
+      ),
+      child: Text(
+        translated == key ? state : translated,
+        style: TextStyle(fontSize: FontSizes.xs, color: t.n600),
       ),
     );
   }
@@ -387,7 +656,10 @@ class _ControlCheckbox extends StatelessWidget {
             color: on ? t.a700 : t.n500,
           ),
           const SizedBox(width: 5),
-          Text(label, style: TextStyle(fontSize: FontSizes.sm, color: t.n700)),
+          Text(
+            label,
+            style: TextStyle(fontSize: FontSizes.sm, color: t.n700),
+          ),
         ],
       ),
     );

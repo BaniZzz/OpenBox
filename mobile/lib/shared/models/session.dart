@@ -6,17 +6,20 @@ import 'token_usage.dart';
 enum SessionStatus { idle, busy, retry, error, compacting, finalizing }
 
 SessionStatus sessionStatusFrom(String? value) => switch (value) {
-      'busy' => SessionStatus.busy,
-      'retry' => SessionStatus.retry,
-      'error' => SessionStatus.error,
-      'compacting' => SessionStatus.compacting,
-      'finalizing' => SessionStatus.finalizing,
-      _ => SessionStatus.idle,
-    };
+  'busy' => SessionStatus.busy,
+  'retry' => SessionStatus.retry,
+  'error' => SessionStatus.error,
+  'compacting' => SessionStatus.compacting,
+  'finalizing' => SessionStatus.finalizing,
+  _ => SessionStatus.idle,
+};
 
 class Session {
   const Session({
     required this.id,
+    this.userId,
+    this.workspaceId,
+    this.ownerUsername,
     required this.title,
     required this.agent,
     required this.model,
@@ -39,31 +42,37 @@ class Session {
   });
 
   factory Session.fromJson(Map<String, dynamic> json) => Session(
-        id: asString(json['id']) ?? '',
-        title: asString(json['title']) ?? '',
-        agent: asString(json['agent']) ?? 'build',
-        model: asString(json['model']) ?? '',
-        videoModel: asString(json['video_model']),
-        videoResolution: asString(json['video_resolution']),
-        status: sessionStatusFrom(asString(json['status'])),
-        variant: asString(json['variant']),
-        createdAt: asDate(json['created_at']) ?? DateTime.now(),
-        updatedAt: asDate(json['updated_at']) ?? DateTime.now(),
-        sandboxId: asString(json['sandbox_id']),
-        additions: asInt(json['additions']) ?? 0,
-        deletions: asInt(json['deletions']) ?? 0,
-        filesChanged: asInt(json['files_changed']) ?? 0,
-        tokenUsage: json['token_usage'] is Map<String, dynamic>
-            ? TokenUsage.fromJson(json['token_usage'] as Map<String, dynamic>)
-            : null,
-        slug: asString(json['slug']) ?? '',
-        projectId: asString(json['project_id']) ?? 'default',
-        parentId: asString(json['parent_id']),
-        directory: asString(json['directory']),
-        kind: asString(json['kind']) ?? 'chat',
-      );
+    id: asString(json['id']) ?? '',
+    userId: asString(json['user_id']),
+    workspaceId: asString(json['workspace_id']),
+    ownerUsername: asString(json['owner_username']),
+    title: asString(json['title']) ?? '',
+    agent: asString(json['agent']) ?? 'build',
+    model: asString(json['model']) ?? '',
+    videoModel: asString(json['video_model']),
+    videoResolution: asString(json['video_resolution']),
+    status: sessionStatusFrom(asString(json['status'])),
+    variant: asString(json['variant']),
+    createdAt: asDate(json['created_at']) ?? DateTime.now(),
+    updatedAt: asDate(json['updated_at']) ?? DateTime.now(),
+    sandboxId: asString(json['sandbox_id']),
+    additions: asInt(json['additions']) ?? 0,
+    deletions: asInt(json['deletions']) ?? 0,
+    filesChanged: asInt(json['files_changed']) ?? 0,
+    tokenUsage: json['token_usage'] is Map<String, dynamic>
+        ? TokenUsage.fromJson(json['token_usage'] as Map<String, dynamic>)
+        : null,
+    slug: asString(json['slug']) ?? '',
+    projectId: asString(json['project_id']) ?? 'default',
+    parentId: asString(json['parent_id']),
+    directory: asString(json['directory']),
+    kind: asString(json['kind']) ?? 'chat',
+  );
 
   final String id;
+  final String? userId;
+  final String? workspaceId;
+  final String? ownerUsername;
   final String title;
   final String agent;
   final String model;
@@ -103,29 +112,35 @@ class Session {
       status == SessionStatus.compacting ||
       status == SessionStatus.finalizing;
 
-  Session copyWith({String? title, SessionStatus? status, TokenUsage? tokenUsage}) =>
-      Session(
-        id: id,
-        title: title ?? this.title,
-        agent: agent,
-        model: model,
-        variant: variant,
-        videoModel: videoModel,
-        videoResolution: videoResolution,
-        status: status ?? this.status,
-        createdAt: createdAt,
-        updatedAt: updatedAt,
-        sandboxId: sandboxId,
-        additions: additions,
-        deletions: deletions,
-        filesChanged: filesChanged,
-        tokenUsage: tokenUsage ?? this.tokenUsage,
-        slug: slug,
-        projectId: projectId,
-        parentId: parentId,
-        directory: directory,
-        kind: kind,
-      );
+  Session copyWith({
+    String? title,
+    SessionStatus? status,
+    TokenUsage? tokenUsage,
+  }) => Session(
+    id: id,
+    userId: userId,
+    workspaceId: workspaceId,
+    ownerUsername: ownerUsername,
+    title: title ?? this.title,
+    agent: agent,
+    model: model,
+    variant: variant,
+    videoModel: videoModel,
+    videoResolution: videoResolution,
+    status: status ?? this.status,
+    createdAt: createdAt,
+    updatedAt: updatedAt,
+    sandboxId: sandboxId,
+    additions: additions,
+    deletions: deletions,
+    filesChanged: filesChanged,
+    tokenUsage: tokenUsage ?? this.tokenUsage,
+    slug: slug,
+    projectId: projectId,
+    parentId: parentId,
+    directory: directory,
+    kind: kind,
+  );
 }
 
 /// Which retry a stalled run is on, carried by `session.status` when the

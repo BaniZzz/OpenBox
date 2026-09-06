@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -26,13 +28,16 @@ class WorkspaceShell extends ConsumerStatefulWidget {
 }
 
 class _WorkspaceShellState extends ConsumerState<WorkspaceShell> {
+  StreamSubscription<AppEvent>? _workbenchSub;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(wsClientProvider).connect();
       // Cross-feature: chat "审阅 →" emits workbench.open (web D.6).
-      ref.read(appEventBusProvider).on('workbench.open').listen((event) {
+      _workbenchSub =
+          ref.read(appEventBusProvider).on('workbench.open').listen((event) {
         final sessionId = event.payload['sessionId'];
         final kind = event.payload['kind'];
         if (sessionId is String && mounted) {
@@ -40,9 +45,17 @@ class _WorkspaceShellState extends ConsumerState<WorkspaceShell> {
             sessionId,
             tab: kind is String && kind.isNotEmpty ? kind : 'review',
           ));
+        } else if (kind == 'desktop' && mounted) {
+          context.push(Paths.desktop);
         }
       });
     });
+  }
+
+  @override
+  void dispose() {
+    unawaited(_workbenchSub?.cancel());
+    super.dispose();
   }
 
   @override

@@ -3,6 +3,8 @@ import 'dart:math' as math;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../shared/api/api_error.dart';
+import '../../../shared/events/bus.dart';
 import '../../../shared/i18n/i18n.dart';
 import '../../../shared/models/message.dart';
 import '../../../shared/models/message_part.dart';
@@ -187,6 +189,12 @@ class ChatSessionController
       // message sitting in the transcript as though it had been sent, which
       // is the opposite of what happened.
       stream.dropOptimistic(_sessionId, cmid);
+      if (apiErrorOf(error)?.code == 'DESKTOP_NOT_READY') {
+        ref.read(appEventBusProvider).emit('workbench.open', {
+          'kind': 'desktop',
+          'sessionId': _sessionId,
+        });
+      }
       ref
           .read(toastProvider.notifier)
           .error(errorText(ref.read(i18nProvider), error));

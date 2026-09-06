@@ -3,7 +3,7 @@
   "subtitle": "Account & preferences",
   "nav": {
     "account": "Account",
-    "usage": "Usage & cost",
+    "team": "Team",
     "models": "Models",
     "tools": "Tools & permissions",
     "browser": "Browser",
@@ -11,7 +11,7 @@
   },
   "hint": {
     "account": "Sign-in identity and session.",
-    "usage": "Token consumption and cost per chat.",
+    "team": "Workspace members, roles and invitations.",
     "models": "Default model and agent picks.",
     "tools": "Which actions may run without confirmation.",
     "browser": "Choose which browser the agent uses to open web pages.",
@@ -24,15 +24,32 @@
     "role": "Role",
     "userId": "User ID"
   },
-  "usage": {
-    "contextUsed": "Current chat context",
-    "totalTokens": "Total tokens",
-    "totalCost": "Total cost",
-    "sessions_one": "{{count}} chat",
-    "sessions_other": "{{count}} chats",
-    "note": "Covers every chat under this account; cost is estimated from model pricing.",
-    "perSession": "Per-chat consumption",
-    "empty": "No consumption recorded yet"
+  "team": {
+    "members": "Members",
+    "pending": "Invitations for you",
+    "pendingEmpty": "No pending invitations.",
+    "targetPlaceholder": "Username or email",
+    "invite": "Invite",
+    "remove": "Remove",
+    "inviteCreated": "Invitation link copied: {{url}}",
+    "inviteLink": "Invitation link",
+    "joined": "Joined {{date}}",
+    "acceptTitle": "Workspace invitation",
+    "acceptHint": "Accept this invitation to join the workspace.",
+    "accept": "Accept invitation",
+    "accepted": "Invitation accepted. The workspace is now selected.",
+    "enterWorkspace": "Enter workspace",
+    "roles": {
+      "owner": "Owner",
+      "admin": "Admin",
+      "member": "Member"
+    },
+    "statuses": {
+      "active": "Active",
+      "invited": "Invited",
+      "suspended": "Suspended",
+      "removed": "Removed"
+    }
   },
   "models": {
     "defaultModel": "Default model",

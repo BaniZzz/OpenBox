@@ -52,12 +52,16 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
       _error = null;
     });
     try {
-      await ref.read(authFlowProvider).register(
+      await ref
+          .read(authFlowProvider)
+          .register(
             _account.text.trim(),
             _password.text,
             email: _email.text.trim(),
           );
-      if (mounted) context.go(Paths.app);
+      if (mounted) {
+        context.go(Paths.postAuthDestination(GoRouterState.of(context).uri));
+      }
     } catch (e) {
       if (mounted) {
         setState(() => _error = errorText(ref.read(i18nProvider), e));
@@ -69,9 +73,7 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
 
   @override
   Widget build(BuildContext context) {
-    return AuthShell(
-      child: SsoGate(register: true, child: _form(context)),
-    );
+    return AuthShell(child: SsoGate(register: true, child: _form(context)));
   }
 
   /// The account/password form — reached only when Logto is unavailable,
@@ -83,8 +85,10 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(i18n.t('auth:registerTitle'),
-            style: Theme.of(context).textTheme.titleLarge),
+        Text(
+          i18n.t('auth:registerTitle'),
+          style: Theme.of(context).textTheme.titleLarge,
+        ),
         const SizedBox(height: 8),
         Text(
           i18n.t('auth:registerBody'),
@@ -155,7 +159,9 @@ class _RegisterPageState extends ConsumerState<RegisterPage> {
         ),
         const SizedBox(height: 16),
         GestureDetector(
-          onTap: () => context.go(Paths.login),
+          onTap: () => context.go(
+            Paths.authPeer(Paths.login, GoRouterState.of(context).uri),
+          ),
           child: Text(
             i18n.t('auth:haveAccount'),
             style: TextStyle(fontSize: FontSizes.sm, color: t.a700),

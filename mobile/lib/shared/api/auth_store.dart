@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/auth_user.dart';
 import '../models/json.dart';
 import '../ws/ws_client.dart';
+import 'logto_session.dart';
 import 'providers.dart';
 
 /// Global auth store, mirroring frontend-v2 `shared/api/auth-store.ts`:
@@ -35,18 +36,25 @@ class AuthController extends Notifier<AuthState> {
   }
 
   void setAuth(String accessToken, AuthUser user) {
-    ref.read(authSessionProvider).accessToken = accessToken;
+    final session = ref.read(authSessionProvider);
+    session.accessToken = accessToken;
+    session.userId = user.id;
     state = AuthState(user: user, isLoading: false);
   }
 
   void clearAuth() {
-    ref.read(authSessionProvider).accessToken = null;
+    final session = ref.read(authSessionProvider);
+    session.accessToken = null;
+    session.userId = null;
+    ref.read(workspaceScopeProvider).clear();
     state = const AuthState(isLoading: false);
   }
 
-  /// Sign out: server logout (best-effort), WS teardown, local clear
-  /// (web `UserRow` sign-out flow).
+  /// Sign out of both OpenBox and Logto. OpenBox state is always cleared even
+  /// if either server is unavailable; Logto's SDK also removes native tokens
+  /// in its own best-effort cleanup path.
   Future<void> signOut() async {
+    final logtoConfig = ref.read(logtoSsoProvider.future);
     try {
       await ref.read(apiDioProvider).post<dynamic>('/api/auth/logout');
     } catch (_) {
@@ -54,6 +62,12 @@ class AuthController extends Notifier<AuthState> {
     }
     ref.read(wsClientProvider).disconnect();
     clearAuth();
+    try {
+      await ref.read(logtoSessionProvider).signOut(await logtoConfig);
+    } catch (_) {
+      // The local OpenBox and Logto token state has already been cleared. A
+      // canceled/unreachable browser logout must never restore this session.
+    }
   }
 
   /// POST /api/auth/refresh (cookie) → GET /api/auth/me. Returns the new
@@ -62,8 +76,9 @@ class AuthController extends Notifier<AuthState> {
   Future<String?> _doRefresh() async {
     final dio = ref.read(refreshDioProvider);
     try {
-      final refreshResp =
-          await dio.post<Map<String, dynamic>>('/api/auth/refresh');
+      final refreshResp = await dio.post<Map<String, dynamic>>(
+        '/api/auth/refresh',
+      );
       final token = asString(refreshResp.data?['access_token']);
       if (token == null) {
         clearAuth();
@@ -73,11 +88,11 @@ class AuthController extends Notifier<AuthState> {
         '/api/auth/me',
         options: Options(headers: {'Authorization': 'Bearer $token'}),
       );
-      ref.read(authSessionProvider).accessToken = token;
-      state = AuthState(
-        user: AuthUser.fromJson(meResp.data ?? const {}),
-        isLoading: false,
-      );
+      final authSession = ref.read(authSessionProvider);
+      authSession.accessToken = token;
+      final user = AuthUser.fromJson(meResp.data ?? const {});
+      authSession.userId = user.id;
+      state = AuthState(user: user, isLoading: false);
       return token;
     } on DioException {
       clearAuth();

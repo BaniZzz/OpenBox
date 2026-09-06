@@ -20,10 +20,64 @@ String formatTokens(num tokens) {
 
 String formatCost(num cost) => '\$${cost.toStringAsFixed(cost < 0.1 ? 4 : 2)}';
 
+/// Exact presentation for backend Decimal strings. This normalizes exponent
+/// notation and groups the integer part without ever parsing through `double`.
+String formatCredits(String? value) {
+  if (value == null) return '—';
+  final match = RegExp(
+    r'^([+-]?)(\d+)(?:\.(\d*))?(?:[eE]([+-]?\d+))?$',
+  ).firstMatch(value.trim());
+  if (match == null) return '—';
+  final sign = match.group(1)!;
+  var digits = '${match.group(2)!}${match.group(3) ?? ''}';
+  var decimal =
+      match.group(2)!.length + (int.tryParse(match.group(4) ?? '0') ?? 0);
+  if (decimal < 0) {
+    digits = '${List.filled(-decimal, '0').join()}$digits';
+    decimal = 0;
+  } else if (decimal > digits.length) {
+    digits = '$digits${List.filled(decimal - digits.length, '0').join()}';
+  }
+  var whole = decimal == 0 ? '0' : digits.substring(0, decimal);
+  var fraction = decimal >= digits.length ? '' : digits.substring(decimal);
+  whole = whole.replaceFirst(RegExp(r'^0+(?=\d)'), '');
+  fraction = fraction.replaceFirst(RegExp(r'0+$'), '');
+  // Billing precision is 12 decimal places; retaining them all prevents tiny
+  // model charges from appearing as zero.
+  final grouped = whole.replaceAllMapped(
+    RegExp(r'\B(?=(\d{3})+(?!\d))'),
+    (_) => ',',
+  );
+  final normalizedSign = sign == '-' && (whole != '0' || fraction.isNotEmpty)
+      ? '-'
+      : '';
+  return '$normalizedSign$grouped${fraction.isEmpty ? '' : '.$fraction'}';
+}
+
+/// CNY amount from integer fen, avoiding floating-point conversion.
+String formatFen(int amountFen) {
+  final negative = amountFen < 0;
+  final absolute = amountFen.abs();
+  final yuan = absolute ~/ 100;
+  final fen = absolute % 100;
+  final fraction = fen == 0
+      ? ''
+      : fen % 10 == 0
+      ? '.${fen ~/ 10}'
+      : '.${fen.toString().padLeft(2, '0')}';
+  final grouped = yuan.toString().replaceAllMapped(
+    RegExp(r'\B(?=(\d{3})+(?!\d))'),
+    (_) => ',',
+  );
+  return '${negative ? '-' : ''}$grouped$fraction';
+}
+
 /// Seconds → "4.2s" / "1m 23s" / "1h 2m".
 String formatDuration(num seconds) {
   if (seconds < 60) {
-    return seconds < 10 ? '${seconds.toStringAsFixed(1)}s' : '${seconds.round()}s';
+    return seconds < 10
+        ? '${seconds.toStringAsFixed(1)}s'
+        : '${seconds.round()}s';
   }
   final total = seconds.round();
   final h = total ~/ 3600;
@@ -44,10 +98,10 @@ String formatRelative(DateTime target, String language, {DateTime? now}) {
   final (value, zhUnit, enUnit) = abs < 60
       ? (abs, '秒', 'second')
       : abs < 3600
-          ? ((abs / 60).round(), '分钟', 'minute')
-          : abs < 86400
-              ? ((abs / 3600).round(), '小时', 'hour')
-              : ((abs / 86400).round(), '天', 'day');
+      ? ((abs / 60).round(), '分钟', 'minute')
+      : abs < 86400
+      ? ((abs / 3600).round(), '小时', 'hour')
+      : ((abs / 86400).round(), '天', 'day');
 
   final enPlural = value == 1 ? enUnit : '${enUnit}s';
   if (seconds >= 0) {

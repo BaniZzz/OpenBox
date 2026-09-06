@@ -179,7 +179,6 @@
     "work": {
       "titleActive": "执行过程中",
       "titleDone": "执行过程",
-      "summary": "{{messages}} 条过程说明 · {{screenshots}} 个过程画面",
       "checkpoint": "页面检查点",
       "omitted": "已折叠另外 {{count}} 张重复过程截图"
     }
@@ -214,7 +213,7 @@
     "inputTokens": "输入 tokens",
     "outputTokens": "输出 tokens",
     "cacheTokens": "缓存 tokens",
-    "cost": "本次调用费用",
+    "cost": "消耗积分",
     "generationDuration": "生成用时",
     "totalDuration": "总用时",
     "expandMessage": "展开全文",

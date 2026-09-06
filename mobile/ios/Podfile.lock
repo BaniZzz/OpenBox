@@ -1,4 +1,5 @@
 PODS:
+  - AlipaySDK-iOS (15.8.30)
   - Flutter (1.0.0)
   - libwebp (1.5.0):
     - libwebp/demux (= 1.5.0)
@@ -17,11 +18,13 @@ PODS:
     - libwebp
 
 DEPENDENCIES:
+  - AlipaySDK-iOS (= 15.8.30)
   - Flutter (from `Flutter`)
   - video_thumbnail (from `.symlinks/plugins/video_thumbnail/ios`)
 
 SPEC REPOS:
   trunk:
+    - AlipaySDK-iOS
     - libwebp
 
 EXTERNAL SOURCES:
@@ -31,10 +34,11 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/video_thumbnail/ios"
 
 SPEC CHECKSUMS:
+  AlipaySDK-iOS: 913a1df564c64798903e71cf3d63141d9e1904d2
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
   libwebp: 02b23773aedb6ff1fd38cec7a77b81414c6842a8
   video_thumbnail: b637e0ad5f588ca9945f6e2c927f73a69a661140
 
-PODFILE CHECKSUM: 8c4d30c2258325612f2b7276ac7aac1f617fcf63
+PODFILE CHECKSUM: 9aeb6f4385fbbf06ad099bd12ed95db47ff2f6cc
 
 COCOAPODS: 1.17.0

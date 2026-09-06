@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../shared/api/api_error.dart';
 import '../../shared/api/containers_api.dart';
 import '../../shared/appearance/tokens.dart';
 import '../../shared/appearance/type_scale.dart';
@@ -47,6 +48,7 @@ class _EmptyChatScreenState extends ConsumerState<EmptyChatScreen> {
   Future<void> _startChat(String text,
       [List<String> attachments = const []]) async {
     if (text.trim().isEmpty && attachments.isEmpty) return;
+    String? createdSessionId;
     try {
       final model = ref.read(pickedModelProvider(draftSessionKey)) ?? '';
       final agent = ref.read(pickedAgentProvider(draftSessionKey)) ?? 'build';
@@ -68,6 +70,7 @@ class _EmptyChatScreenState extends ConsumerState<EmptyChatScreen> {
             agent: agent,
             variant: variant,
           );
+      createdSessionId = session.id;
       // Carry the draft picks onto the real session.
       ref.read(pickedModelProvider(session.id).notifier).state =
           model.isEmpty ? null : model;
@@ -84,6 +87,12 @@ class _EmptyChatScreenState extends ConsumerState<EmptyChatScreen> {
       ref.read(appEventBusProvider).emit('workspace.refresh');
       if (mounted) context.go(Paths.chat(session.id));
     } catch (e) {
+      if (apiErrorOf(e)?.code == 'DESKTOP_NOT_READY') {
+        ref.read(appEventBusProvider).emit('workbench.open', {
+          'kind': 'desktop',
+          'sessionId': ?createdSessionId,
+        });
+      }
       if (mounted) {
         ref
             .read(toastProvider.notifier)

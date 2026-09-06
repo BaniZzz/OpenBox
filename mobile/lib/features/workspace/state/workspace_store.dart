@@ -8,6 +8,7 @@ import '../../../shared/models/project.dart';
 import '../../../shared/models/session.dart';
 import '../../../shared/ws/ws_client.dart';
 import '../api/workspace_api.dart';
+import 'active_workspace_store.dart';
 
 /// Sessions + projects for the sidebar/drawer, kept fresh via WS events
 /// (web `useWorkspaceEvents` invalidates on `session.*` and `__connected`;
@@ -40,6 +41,11 @@ class WorkspaceController extends AsyncNotifier<WorkspaceData> {
 
   @override
   Future<WorkspaceData> build() async {
+    final workspaceId = ref
+        .watch(activeWorkspaceProvider)
+        .valueOrNull
+        ?.currentId;
+    if (workspaceId == null) return const WorkspaceData();
     unawaited(_sub?.cancel());
     _sub = ref.watch(wsClientProvider).events.listen(_onWsEvent);
     unawaited(_busSub?.cancel());
@@ -100,11 +106,17 @@ class WorkspaceController extends AsyncNotifier<WorkspaceData> {
       for (final s in data.sessions)
         if (s.id == id) update(s) else s,
     ];
-    state = AsyncData(WorkspaceData(projects: data.projects, sessions: sessions));
+    state = AsyncData(
+      WorkspaceData(projects: data.projects, sessions: sessions),
+    );
   }
 
   /// Create + return a session; the caller navigates to it.
-  Future<Session> createSession({String? projectId, String model = '', String agent = 'build'}) async {
+  Future<Session> createSession({
+    String? projectId,
+    String model = '',
+    String agent = 'build',
+  }) async {
     final session = await ref
         .read(workspaceApiProvider)
         .createSession(projectId: projectId, model: model, agent: agent);
@@ -135,8 +147,8 @@ class WorkspaceController extends AsyncNotifier<WorkspaceData> {
 
 final workspaceProvider =
     AsyncNotifierProvider<WorkspaceController, WorkspaceData>(
-  WorkspaceController.new,
-);
+      WorkspaceController.new,
+    );
 
 /// The project new chats land in (web `useWorkspaceUi.selectedProject`).
 final selectedProjectProvider = StateProvider<String?>((ref) => null);

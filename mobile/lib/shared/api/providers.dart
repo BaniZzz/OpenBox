@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'auth_session.dart';
 import 'http_client.dart';
+import 'workspace_scope.dart';
 
 /// Platform/transport singletons. `prefs` and `cookieJar` are created
 /// asynchronously and overridden in main() before runApp.
@@ -18,10 +19,15 @@ final cookieJarProvider = Provider<CookieJar>(
 
 final authSessionProvider = Provider<AuthSession>((ref) => AuthSession());
 
+final workspaceScopeProvider = Provider<WorkspaceScope>(
+  (ref) => WorkspaceScope(),
+);
+
 final apiDioProvider = Provider<Dio>(
   (ref) => buildApiDio(
     auth: ref.watch(authSessionProvider),
     cookieJar: ref.watch(cookieJarProvider),
+    workspace: ref.watch(workspaceScopeProvider),
   ),
 );
 

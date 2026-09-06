@@ -42,7 +42,9 @@ class _SsoGateState extends ConsumerState<SsoGate> {
       await ref
           .read(authFlowProvider)
           .loginWithLogto(sso, register: widget.register);
-      if (mounted) context.go(Paths.app);
+      if (mounted) {
+        context.go(Paths.postAuthDestination(GoRouterState.of(context).uri));
+      }
     } on PlatformException catch (e) {
       // Dismissing the sheet is a decision, not a failure: leave the screen as
       // it was so a second tap starts over.
@@ -133,7 +135,11 @@ class _SsoGateState extends ConsumerState<SsoGate> {
           const SizedBox(height: 16),
           Text(
             i18n.t('auth:legal'),
-            style: TextStyle(fontSize: FontSizes.xs2, color: t.n500, height: 1.5),
+            style: TextStyle(
+              fontSize: FontSizes.xs2,
+              color: t.n500,
+              height: 1.5,
+            ),
           ),
         ],
       ],

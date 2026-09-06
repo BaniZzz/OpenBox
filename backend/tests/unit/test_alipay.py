@@ -89,6 +89,19 @@ async def test_checkout_is_rsa2_signed_for_exact_test_amount_and_official_gatewa
         callback_url="https://app.example.test/api/billing/webhooks/alipay")).url
 
 
+async def test_app_checkout_is_server_signed_for_official_mobile_sdk(alipay):
+    checkout = await alipay.adapter.create_app_checkout(order_id="pay-test", amount_fen=10,
+        callback_url="https://app.example.test/api/billing/webhooks/alipay")
+    params = dict(parse_qsl(checkout.payload))
+    verify_request(alipay, params)
+    assert params["method"] == "alipay.trade.app.pay"
+    assert params["notify_url"] == "https://app.example.test/api/billing/webhooks/alipay"
+    assert "return_url" not in params
+    assert json.loads(params["biz_content"]) == {"out_trade_no": "pay-test", "total_amount": "0.10",
+        "subject": "bossip 订购", "product_code": "QUICK_MSECURITY_PAY"}
+    assert checkout.provider_order_id == "pay-test"
+
+
 @pytest.mark.parametrize("change", [
     {"app_id": "2021000000000002"}, {"seller_id": "2088000000000002"},
     {"total_amount": "0.101"}, {"total_amount": "1e-1"}, {"total_amount": "-0.10"},
@@ -198,6 +211,21 @@ async def test_native_webhook_returns_plain_success_only_after_exact_once_credit
         assert (await db.get(CreditBalance, ws)).balance == 280
         assert await db.scalar(select(func.count()).select_from(CreditLedger).where(CreditLedger.workspace_id == ws)) == 1
     assert (await payer.client.get("/api/billing/subscription")).json()["plan_id"] == "pro"
+
+
+async def test_native_app_checkout_endpoint_returns_ephemeral_sdk_payload(alipay, payer):
+    order = await subscribe(payer)
+    providers = (await payer.client.get("/api/billing/providers")).json()["items"]
+    assert providers[0]["supports_app_checkout"] is True
+    result = (await payer.client.post(f"/api/billing/orders/{order['id']}/app-checkout")).json()
+    assert result["provider"] == "alipay" and result["order"]["id"] == order["id"]
+    params = dict(parse_qsl(result["sdk_payload"]))
+    verify_request(alipay, params)
+    assert params["method"] == "alipay.trade.app.pay"
+    async with get_db_session() as db:
+        saved = await db.get(PaymentOrder, order["id"])
+        assert saved.provider_order_id == order["id"]
+        assert saved.checkout_url == order["checkout_url"]
 
 
 async def test_unpaid_notification_does_not_activate_a_plan(alipay, payer):

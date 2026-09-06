@@ -2,8 +2,8 @@ import { useState } from "react"
 import { useTranslation } from "react-i18next"
 import { useNavigate } from "react-router"
 import { MoreHorizontal } from "lucide-react"
+import { env } from "@/shared/config/env"
 import { useAuthStore } from "@/shared/api/auth-store"
-import { http } from "@/shared/api/http"
 import { Menu, MenuItem } from "@/shared/ui/Menu"
 import { paths } from "@/shared/router/paths"
 import { useCreditBalance } from "@/shared/api/billing"
@@ -16,11 +16,12 @@ export function UserRow({ sessionCount }: { sessionCount: number }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const credits = useCreditBalance()
 
-  const signOut = async () => {
+  const signOut = () => {
     setMenuOpen(false)
-    await http.post("/api/auth/logout").catch(() => undefined)
-    useAuthStore.getState().clearAuth()
-    navigate(paths.landing)
+    // One full-page navigation lets the backend revoke the OpenBox cookie and
+    // immediately redirect to Logto. Clearing the store here would make the
+    // auth guard mount /login and race a new SSO request against sign-out.
+    window.location.assign(`${env.apiBase}/api/auth/logto/logout`)
   }
 
   return (
@@ -44,7 +45,7 @@ export function UserRow({ sessionCount }: { sessionCount: number }) {
             {t("adminFleet")}
           </MenuItem>
         )}
-        <MenuItem onClick={() => void signOut()}>{t("common:action.signOut", { ns: "common" })}</MenuItem>
+        <MenuItem onClick={signOut}>{t("common:action.signOut", { ns: "common" })}</MenuItem>
       </Menu>
       <div className="hover:bg-n200 flex items-center gap-2.5 rounded-full px-2.5 py-2">
         <span

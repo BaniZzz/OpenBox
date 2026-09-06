@@ -1,5 +1,5 @@
 # Uncomment this line to define a global platform for your project
-# platform :ios, '14.0'
+platform :ios, '14.0'
 
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
@@ -30,6 +30,13 @@ flutter_ios_podfile_setup
 target 'Runner' do
   use_frameworks!
 
+  # Native Alipay handoff requires the Alipay client on a physical device.
+  # Keep the SDK in production configurations while Debug simulator builds use
+  # the deterministic browser fallback in AppDelegate. The current 15.8.30
+  # XCFramework does contain an arm64 simulator slice; this is a test-policy
+  # boundary, not an architecture limitation.
+  pod 'AlipaySDK-iOS', '15.8.30', :configurations => ['Profile', 'Release']
+
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
   target 'RunnerTests' do
     inherit! :search_paths
@@ -37,7 +44,17 @@ target 'Runner' do
 end
 
 post_install do |installer|
+  # Flutter 3.44 asks the Pods project for its *default* simulator build
+  # settings before writing Generated.xcconfig. Make that probe describe Debug
+  # and keep every Debug pod native on Apple Silicon; explicit Profile/Release
+  # device builds still use their named configuration and link AlipaySDK.
+  installer.pods_project.build_configuration_list.default_configuration_name = 'Debug'
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
+    target.build_configurations.each do |config|
+      if config.name == 'Debug'
+        config.build_settings['EXCLUDED_ARCHS[sdk=iphonesimulator*]'] = 'i386'
+      end
+    end
   end
 end

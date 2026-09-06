@@ -1,0 +1,226 @@
+# Web → 移动端对齐清单
+
+> 性质：活文档，记录已经进入 `main`、但 Flutter 移动端尚未跟进的能力、依赖、决策和验收标准。
+>
+> 最近核对与实现：2026-09-07；Web 基线 `d9c6b82`，本轮 Flutter 对齐改动纳入本次提交。
+> 最初核对范围为 `2c64409..49ba4ff`，并补计更早未移植的 `9dd7d79`（桌面按用户开通）。
+
+## 维护规则
+
+1. Web 新增跨端能力时，必须在同一个变更里完成移动端，或在本文登记为“待对齐/有意省略/待决策”。
+2. 完成一项后，同时更新状态、验收结果和对应提交；不要只删除条目。
+3. `frontend-v2/src/locales/*/*.json` 是 locale 唯一事实源。移动端文件逐字节复制，不在 `mobile/assets/locales/` 单独改文案。
+4. “后端默认值让 App 暂时不报错”不等于已经对齐；仍需验证租户隔离、权限和缓存是否正确。
+
+状态含义：`待对齐`、`进行中`、`待决策`、`已完成`、`有意省略`。
+
+## 当前结论
+
+`2c64409..49ba4ff` 之间有 8 个提交改动 `frontend-v2/src`，合计 75 个文件、`+3962/-355`，当时没有移动端文件改动。本轮已完成 4 个用户功能块和 locale 对齐；舰队管理继续作为有意省略的桌面运维能力。支付宝移动 SDK 已接线，生产后端已提供服务端签名接口，正式商店发布仍须在给齐商户配置后完成支付实测与 iOS 合规决策。
+
+| 优先级 | 功能块 | Web 提交 | 状态 | 主要影响/依赖 |
+|---|---|---|---|---|
+| P0 | 工作空间多租户与协作 | `6622c61`，并含 `bfd08a4` 的请求作用域保护 | 已完成 | header/store、缓存隔离、只读会话、Team、邀请 deep link 均已接入 |
+| P0 | Locale 同步 + 工作日志内联常开 | `a7b5816` 及以上功能提交 | 已完成 | locale 逐字节一致，已增加自动门禁 |
+| P1 | 云桌面开通、状态与未就绪引导 | `9dd7d79`、`df805a6`、`a789456` | 已完成 | status、开通/重建、长轮询、通道状态和聊天引导已接入 |
+| P1 | 积分、套餐、用量与订单 | `bfd08a4` | 已完成（技术接入） | 三页、余额和 App Pay SDK 已接；商户 key 与 iOS 上架策略仍是发布门禁 |
+| P3 | 舰队管理 | `ae330c0` | 有意省略 | 管理员运维台，按移动端“能力不具备则省略控件”处理 |
+
+## 1. Locale 同步与工作日志内联常开
+
+### 对齐前差异（已解决）
+
+- Web 的 `WorkLogTrace` 已不再使用折叠的 `TraceShell`，过程说明与最终答复同列、常开并按顺序累积。
+- 移动端 `work_log_trace.dart` 仍使用 `TraceShell` 和 `chat:trace.work.summary`；`assistant_turn.dart` 仍传 `defaultOpen`。
+- 移动端缺少 locale 自动对齐门禁，`mobile/scripts/` 目前只有文件大小检查。
+
+每个语言目录的已知差异如下：
+
+| 文件 | 差异 |
+|---|---|
+| `admin.json` | 移动端缺文件，36 个叶子 key |
+| `billing.json` | 移动端缺文件，127 个叶子 key |
+| `errors.json` | 缺 `DESKTOP_NOT_READY`、`INVITATION_EXPIRED`、`SESSION_READ_ONLY`、`WORKSPACE_FORBIDDEN`、`WORKSPACE_ROLE_REQUIRED` |
+| `settings.json` | Web 多 23 个 Team/导航相关 key；移动端残留 10 个 Usage key |
+| `workbench.json` | 缺 12 个开通、分配和通道状态 key |
+| `workspace.json` | 缺 `adminFleet`、`billing`、`creditBalance`、`creditsUnavailable`、`readOnlySession`、`viewCredits`、`workspaceSwitcher` |
+| `chat.json` | `meta.cost` 已改为“消耗积分/Credits”；`trace.work.summary` 已从 Web 删除 |
+
+### 要做
+
+- [x] 将 `WorkLogTrace` 改为内联常开，移除 `defaultOpen` 和 `chat:trace.work.summary` 的所有引用。
+- [x] 保持 WorkLog 与最终答复的展示顺序和 Web 一致，并保留 computer 截图首/中/末三帧规则。
+- [x] 从 Web 逐字节复制全部 locale 文件，并在 `i18n.dart` 注册 `admin`、`billing` namespace。
+- [x] 新增 `mobile/scripts/check_locales.sh`，校验语言目录、文件列表和文件字节完全一致，并写入移动端日常校验命令。
+
+### 验收
+
+- 流式过程中内容从 final 重判为 progress 时，已经显示的段落不会消失或被折叠。
+- `rg 'trace\.work\.summary|defaultOpen' mobile/lib` 不再命中工作日志旧实现。
+- locale 检查脚本在当前 Web 文件上通过；改动任意一个移动端 locale 字节后必须失败。
+- 未知后端错误码仍有通用兜底；上述 5 个新错误码均显示明确文案。
+
+## 2. 工作空间多租户与协作
+
+参考：[B1 工作空间审计](B1_WORKSPACE_AUDIT.md)。
+
+### Web 已有
+
+- 请求携带 `X-Workspace-Id`；access token refresh 后，只有用户和 workspace 都未变化才重试原请求。
+- 持久化当前 workspace（键 `openbox:workspace-id`），提供空间列表、当前空间、待接受邀请、邀请成员、改角色、移除成员、接受邀请等 API。
+- `WorkspaceLayout` 在空间列表就绪后才渲染应用壳；项目和会话缓存按 workspace 分区。
+- 多空间切换器、Team 设置页和 `/invite/:token` 邀请入口已经上线。
+- 他人的会话显示 owner，隐藏删除操作，并将 Composer 换成只读提示。
+
+### 对齐前移动端现状（已解决）
+
+- `http_client.dart` 不发 `X-Workspace-Id`。后端缺 header 时会回退到 `default_workspace_id`，所以基本功能不报错，但用户无法进入受邀团队空间。
+- `Session` 未解析 `user_id`、`workspace_id`、`owner_username`；他人会话仍可出现重命名、删除和发送入口。
+- 后端会以 `SESSION_READ_ONLY` 拒绝这些写操作；移动端当前只会把 403 显示成通用“没有权限”。
+- App 只有 SSO callback scheme，没有邀请链接的 universal/app link 路由。
+
+### 要做
+
+- [x] 增加当前 workspace store；启动时先取空间列表，再恢复持久化选择，不合法时回退后端默认空间。
+- [x] 有选中空间时为所有业务请求注入 `X-Workspace-Id`；bootstrap 请求允许不带 header。
+- [x] refresh 前捕获用户与 workspace，二者任一变化都不得重放旧请求。
+- [x] 切换 workspace 时清理/重取空间、项目、会话、桌面和计费状态，清空失效的已选项目并回到安全根路由。
+- [x] 扩充 `Session` 模型；他人会话显示 `· owner_username`，隐藏重命名/删除，聊天页显示只读提示且不渲染 Composer。
+- [x] 增加 Team 设置页：成员列表、邀请、改角色、移除成员和待接受邀请；按 owner/admin/member 权限控制操作。
+- [x] 增加 Android HTTPS App Link 与两端自定义 scheme 邀请入口，在 App 内接受后刷新 workspace；iOS 通用链接仍需站点 AASA/Associated Domains 后续发布配置。
+
+### 验收
+
+- 默认空间、多空间、被邀请成员三种账号均可进入正确空间；冷启动能恢复上次有效选择。
+- refresh 期间切换账号或空间，不会把旧请求写入新作用域。
+- 切换空间后，项目、会话、桌面状态和积分余额均无前一个空间的数据残留。
+- owner/admin/member 的成员管理权限与后端一致；非本人会话没有任何写入口。
+
+## 3. 云桌面开通、状态与未就绪引导
+
+参考：[桌面执行通道](A1_DESKTOP_CHANNEL.md) 与 [舰队/预热池](A3_A4_FLEET_POOL.md)。
+
+### 对齐前差异（已解决）
+
+- Web 连接前先请求 `GET /api/desktop/status`：未开通时 owner/admin 可开通，member 显示权限提示；失败可重建；创建/启动/分配阶段最多等待 `120 × 5s`。
+- 连接后 Web 每 30 秒刷新 status，显示 `up`、`pending`、`down`、`revoked` 通道状态。
+- 聊天发送或新建会话遇到 `DESKTOP_NOT_READY` 时，Web 会提示并自动打开云桌面面板。
+- 移动端直接请求 ticket，只有 loading/connected/error/closed 四态；`202` 最多等 `30 × 3s = 90s`，首次创建常需 2–3 分钟，容易提前超时。
+
+### 要做
+
+- [x] ticket 前增加 status 预检，覆盖 `not_provisioned`、`failed`、`creating`、`starting`、`assigning`、`running`。
+- [x] owner/admin 提供开通/重建操作，member 显示无权限说明；状态文案区分预热池分配与新建。
+- [x] 冷启动/分配轮询窗口与 Web 对齐为 `120 × 5s`；页面退出时用 generation/timer 取消后续更新。
+- [x] 连接后每 30 秒刷新 status 并显示通道 pill；离开页面后停止 timer。
+- [x] 聊天侧识别 `DESKTOP_NOT_READY`，显示专用提示并导航到云桌面页。
+
+### 验收
+
+- `not_provisioned` 下 owner/admin 与 member 看到正确且不同的动作。
+- 冷创建超过 3 分钟仍能继续等待并最终连接；失败态可以安全重试。
+- 四种通道状态能刷新且不会在离开页面后继续泄漏 timer。
+- 从聊天触发未就绪错误后，用户能直接到达可开通/等待的桌面页面。
+
+## 4. 积分、套餐、用量与订单
+
+参考：[计费方案](BILLING_PLAN.md)。
+
+### Web 已有
+
+- `/app/billing/:tab?` 提供订购、用量、订单三页；用户行显示当前空间积分余额。
+- 已接 balance、plans、subscription、summary、usage、providers 和订单创建/列表/checkout/refresh/cancel。
+- 支持 free/pro/max 套餐、月付/年付、额外充值、待付款订单恢复与状态核对。
+- 消息 token usage 新增 `credits`，UI 以积分而不是 USD cost 展示。
+
+### 对齐前现状与约束
+
+- 没有计费 API、状态或页面；`token_usage.dart` 仍只有旧的 `double cost`，且移动端原本就没有消息费用徽章。
+- `url_launcher` 已在依赖中，可用系统浏览器打开支付页；回到 App 后需要监听 lifecycle resume 并主动 refresh 订单，不能照搬 Web 的 `pageshow`。
+- 金额和积分必须保持后端返回的十进制定点字符串，不能先转 `double` 再展示或参与判断。
+- 后端 `StepFinishPart` 已有 `credits`，但当前 Web 的同名 TypeScript 类型也未完全补齐；这是共享 wire contract 清理，不应误记成仅移动端差异。
+
+### iOS 上线决策（发布前置，技术接入已完成）
+
+Apple 当前 [App Review Guidelines 3.1.1](https://developer.apple.com/app-store/review/guidelines/) 原则上要求数字功能、订阅和 App 内货币使用 In-App Purchase，并按 storefront、entitlement、跨平台或企业服务等例外分别处理。因此不能默认把支付宝外链 1:1 搬到 iOS。
+
+- [ ] 产品/法务确定 iOS 路径：IAP、仅展示已在其他端购买的权益、符合地区 entitlement 的外链，或暂不提供购买。
+- [x] 技术路径按当前决定先接支付宝官方 App SDK；私钥只在服务端签名，App 不携带商户私钥，SDK 结果不作为到账依据。
+- [x] 将实现、模拟器回退和发布门禁补进 `BILLING_PLAN.md`；待商户 key 到齐后再做真机付款与审核材料。
+
+### 建议拆分
+
+第一阶段（已完成）：
+
+- [x] 增加当前 workspace 的积分余额、用量明细、汇总和订单列表。
+- [x] 用户行显示余额；余额不可用时稳定降级，不把网络错误显示成 0。
+- [x] `TokenUsage.credits` 使用 nullable decimal string；金额和积分展示不经 `double`。
+
+第二阶段（SDK/订单状态机已完成，真实付款待 key）：
+
+- [x] Android/iOS 优先使用支付宝官方 App SDK；开发模拟器或后端未声明 App Pay 能力时才回退外部收银台。
+- [x] App 回到前台和订单页停留期间主动 refresh，恢复待支付订单，并支持继续支付、查询状态和取消。
+- [x] 后端增加 `POST /api/billing/orders/{order_id}/app-checkout`，只返回服务端 RSA2 签名的短期 SDK payload；订单最终状态仍仅信任签名通知/主动查询。
+- [ ] 商户 key 到齐后，在 Android 与 iOS 真机分别完成支付、取消、回调延迟和回前台恢复测试。
+
+### 验收
+
+- 余额、用量、订单严格随 workspace 切换，不串数据；大额/小数积分无浮点误差。
+- App 杀后台再恢复、支付取消、支付成功但回调延迟时，均可主动核对到最终订单状态。
+- 重复点击或网络重试不会生成不受控的重复订单。
+
+## 5. 舰队管理
+
+Web `/app/admin/fleet` 是仅 `user.role === "admin"` 可见的运维台，覆盖预热池、桌面列表、告警、释放、重建、退役和收养。
+
+移动端维持 `有意省略`：不添加入口和控件，`admin.json` 仍按 locale 同步规则复制。若以后出现明确的移动运维场景，再单独立项，不能把普通 workspace owner 与平台 admin 权限混在一起。
+
+## 6. 原生下载（2026-09-06 追加并完成）
+
+移动端资源中心、聊天 Lightbox 和普通文件附件此前拿到 OSS 预签名 URL 后调用 `url_launcher`，会离开 App 并由浏览器接管。现已改为：
+
+- [x] 使用无认证头的独立 Dio 客户端在 App 内流式下载到临时文件，避免把 Bearer token 发到 OSS，也避免大文件整块进入内存。
+- [x] iOS 通过 `UIDocumentPickerViewController(forExporting:)` 弹出系统“存储到文件”；Android 通过 `ACTION_CREATE_DOCUMENT` 选择目标后流式复制。
+- [x] 文件名做路径剥离、非法字符替换和长度限制；完成或取消后清理临时目录。
+- [x] 资源中心详情/操作菜单、聊天媒体查看器和 `FileChipRow` 全部改走同一服务；PDF 的“打开”动作仍保留系统查看器语义，不与“下载”混淆。
+
+技能 ZIP 原来就直接写入 App Documents、不会跳浏览器，因此本次不改变它的既有行为。
+
+## 7. 移动端 Composer 精简（2026-09-07 有意差异）
+
+按移动端产品决定，Composer 不显示 Web 上的“执行/方案”模式选择按钮。这是有意的跨端差异，后续做 Web parity 时不得自动补回。
+
+- [x] 只隐藏移动端入口，不删除 agent 字段、状态或后端协议。
+- [x] 已有会话继续沿用会话保存的 agent；新会话继续使用 App/服务端默认 agent，因此历史记录加载和消息发送不受影响。
+- [x] Composer 不再单独显示“思考强度”按钮；聊天模型列表对有思考档位的模型显示二级入口，选择模型后再选择该模型自己的思考强度，与视频模型 → 分辨率的交互一致。
+- [x] 模型与思考强度作为一对保存；无思考档位的模型直接选中，取消二级菜单则两者都不改变。
+- [x] Web 的模式选择器和独立思考强度选择器保持不变；附件与发送入口保持原样。
+
+## 明确不需要重复移植
+
+- `4a87777` / `66bb9de` 的 1920×1080 固定分辨率：移动端 `desktop_bridge.dart` 已用 `fixedResolution`/`maxResolution` 做到等价效果。
+- `7f7d487` 的 content-view 拆函数和测试 mock：行为不变。
+- `4cd8725` 的默认项目名与项目创建时间倒序：后端统一生效，移动端无需专门改动。
+
+## 实施结果
+
+1. **Locale + WorkLog**：已原子完成并增加 byte-for-byte 门禁。
+2. **Workspace**：基础作用域、协作 UI、只读态与邀请入口已完成。
+3. **Desktop**：status、开通/重建、长轮询、通道状态和聊天引导已完成。
+4. **Billing**：查询、购买、订单恢复、两端 SDK 与生产签名接口已完成；只余商户 key 后真机实付和 iOS 上架决策。
+5. **Fleet**：继续省略并保留偏差记录。
+6. **Native download**：已完成，不再借浏览器下载。
+7. **Logto logout**：Web 用单次服务端 302 原子完成 OpenBox Cookie 撤销与 Logto end-session，避免先渲染 `/login` 触发自动授权的竞态；移动端同时清理 OpenBox session、Logto SSO session，并在异常路径强制删除 SDK 本地令牌。两端登录都固定 `prompt=login consent`，既防止系统浏览器残留 Cookie 静默恢复刚退出的账号，也保留 `offline_access` 的授权语义。
+8. **移动端 Composer 控件**：移动端有意隐藏“执行/方案”入口，并把思考强度并入模型二级菜单；Web 保持原交互。
+
+## 完成记录
+
+| 日期 | 功能块 | 提交 | 验收证据 |
+|---|---|---|---|
+| 2026-09-06 | Locale + WorkLog | 本次提交 | locale byte diff 通过；`flutter analyze` 与 Flutter tests 通过 |
+| 2026-09-06 | Workspace + Team + invite | 本次提交 | 请求作用域与 refresh 双保护；路由/权限静态校验通过 |
+| 2026-09-06 | Desktop | 本次提交 | 双端原生构建通过；iOS 模拟器实际安装启动 |
+| 2026-09-06 | Billing + Alipay App SDK | 本次提交；后端镜像 `20260906-app-pay-f9247f1` | 支付/舰队/迁移相关 183 项测试通过；生产 route 匹配 401、服务健康，并保留 `c8fea7f` 生产保护 |
+| 2026-09-06 | 原生下载 | 本次提交 | 文件名单测、Android debug APK、iOS arm64 simulator 构建通过；模拟器实际弹出系统保存面板、回调 `saved=true`，并核对目标文件落盘 |
+| 2026-09-06 | Logto 双层退出 | 本次提交；生产 `20260906-logto-logout3-3586742` | 对照 `workspace/bossip` 修正 Web 退出竞态；后端单次 302/Cookie 撤销、两端 `prompt=login consent` 与移动端 OpenBox+Logto 编排回归通过；真实 Chrome 登出回首页且再次登录停在 Logto 凭证页；生产两应用的 Post sign-out redirect URI 已从 Logto 数据库回读确认 |
+| 2026-09-07 | iOS 历史记录渲染 + Composer 精简 | 本次提交 | 历史会话含工作日志、工具状态、最终答复和截图均正常展示；Composer 隐藏“执行/方案”，思考强度并入模型二级菜单，agent/variant 发送协议保留；Flutter analyze、tests 与 iOS 模拟器交互通过 |

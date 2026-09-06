@@ -29,14 +29,18 @@ class ShimmerText extends StatefulWidget {
 
 class _ShimmerTextState extends State<ShimmerText>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _controller = AnimationController(
-    vsync: this,
-    duration: const Duration(seconds: 2),
-  );
+  late final AnimationController _controller;
 
   @override
   void initState() {
     super.initState();
+    // Always initialize while this State is active. A disabled shimmer never
+    // read the previous lazy field until dispose(), which tried to create a
+    // ticker while the element was already deactivated.
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 2),
+    );
     if (widget.enabled) _controller.repeat();
   }
 

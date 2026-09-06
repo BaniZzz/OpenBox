@@ -13,6 +13,7 @@ import '../../../shared/widgets/brand_mark.dart';
 import '../state/workspace_store.dart';
 import 'session_row.dart';
 import 'user_row.dart';
+import 'workspace_switcher.dart';
 
 /// Left drawer: the mobile re-flow of the web sidebar (`Sidebar.tsx` +
 /// `ProjectTree.tsx`) — brand, new chat, search, project-grouped sessions,
@@ -57,6 +58,7 @@ class _SessionDrawerState extends ConsumerState<SessionDrawer> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const Row(children: [BrandMark()]),
+              const WorkspaceSwitcher(),
               const SizedBox(height: 8),
               // DEEIX-style nav rows (web Sidebar): left-aligned, icon
               // column; the primary action wears a round tinted icon chip
@@ -76,7 +78,9 @@ class _SessionDrawerState extends ConsumerState<SessionDrawer> {
                           width: 28,
                           height: 28,
                           decoration: BoxDecoration(
-                              color: t.n200, shape: BoxShape.circle),
+                            color: t.n200,
+                            shape: BoxShape.circle,
+                          ),
                           child: Icon(Icons.add, size: 15, color: t.ink),
                         ),
                         const SizedBox(width: 10),
@@ -112,11 +116,15 @@ class _SessionDrawerState extends ConsumerState<SessionDrawer> {
                           controller: _search,
                           onChanged: (_) => setState(() {}),
                           style: TextStyle(
-                              fontSize: FontSizes.base, color: t.ink),
+                            fontSize: FontSizes.base,
+                            color: t.ink,
+                          ),
                           decoration: InputDecoration(
                             hintText: i18n.t('workspace:search'),
                             hintStyle: TextStyle(
-                                color: t.n600, fontSize: FontSizes.base),
+                              color: t.n600,
+                              fontSize: FontSizes.base,
+                            ),
                             isDense: true,
                             border: InputBorder.none,
                             contentPadding: EdgeInsets.zero,
@@ -159,10 +167,20 @@ class _SessionDrawerState extends ConsumerState<SessionDrawer> {
                   context.push(Paths.cron);
                 },
               ),
+              _NavRow(
+                icon: Icons.toll_outlined,
+                label: i18n.t('workspace:billing'),
+                onTap: () {
+                  Navigator.pop(context);
+                  context.push(Paths.billing());
+                },
+              ),
               const SizedBox(height: 4),
               Expanded(
                 child: data == null
-                    ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
+                    ? const Center(
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
                     : _buildGroups(i18n, t, data, query),
               ),
               Divider(color: t.hair, height: 16),
@@ -181,12 +199,16 @@ class _SessionDrawerState extends ConsumerState<SessionDrawer> {
   }
 
   Widget _buildGroups(
-      I18nState i18n, BossipTokens t, WorkspaceData data, String query) {
+    I18nState i18n,
+    BossipTokens t,
+    WorkspaceData data,
+    String query,
+  ) {
     final sessions = query.isEmpty
         ? data.sessions
         : data.sessions
-            .where((s) => s.title.toLowerCase().contains(query))
-            .toList();
+              .where((s) => s.title.toLowerCase().contains(query))
+              .toList();
     final grouped = <(Project?, List<Session>)>[];
     final known = <String>{for (final p in data.projects) p.id};
     for (final project in data.projects) {
@@ -207,8 +229,12 @@ class _SessionDrawerState extends ConsumerState<SessionDrawer> {
           if (searching || !_collapsed.contains(project?.id ?? '__loose')) ...[
             // While searching, matches from both kinds show (web parity).
             if (!searching && group.any((s) => s.isCron))
-              _filterToggle(i18n, t, project?.id ?? '__loose',
-                  group.where((s) => s.isCron).length),
+              _filterToggle(
+                i18n,
+                t,
+                project?.id ?? '__loose',
+                group.where((s) => s.isCron).length,
+              ),
             _visibleSessions(project, group, searching).isEmpty
                 ? Padding(
                     padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
@@ -219,15 +245,17 @@ class _SessionDrawerState extends ConsumerState<SessionDrawer> {
                   )
                 : Column(
                     children: [
-                      for (final session
-                          in _visibleSessions(project, group, searching))
+                      for (final session in _visibleSessions(
+                        project,
+                        group,
+                        searching,
+                      ))
                         SessionRow(
                           session: session,
                           active: session.id == widget.activeSessionId,
                           onOpen: () {
-                            ref
-                                .read(selectedProjectProvider.notifier)
-                                .state = project?.id;
+                            ref.read(selectedProjectProvider.notifier).state =
+                                project?.id;
                             Navigator.pop(context);
                             context.go(Paths.chat(session.id));
                           },
@@ -244,18 +272,23 @@ class _SessionDrawerState extends ConsumerState<SessionDrawer> {
   }
 
   List<Session> _visibleSessions(
-      Project? project, List<Session> group, bool searching) {
+    Project? project,
+    List<Session> group,
+    bool searching,
+  ) {
     if (searching) return group;
     final mode = _sessionFilter[project?.id ?? '__loose'] ?? 'chats';
-    return group
-        .where((s) => mode == 'cron' ? s.isCron : !s.isCron)
-        .toList();
+    return group.where((s) => mode == 'cron' ? s.isCron : !s.isCron).toList();
   }
 
   /// [会话 | 定时运行 N] segmented toggle under a project header
   /// (web `FilterToggle`).
   Widget _filterToggle(
-      I18nState i18n, BossipTokens t, String groupId, int cronCount) {
+    I18nState i18n,
+    BossipTokens t,
+    String groupId,
+    int cronCount,
+  ) {
     final mode = _sessionFilter[groupId] ?? 'chats';
     // Icon-only segments (web FilterToggle) — the label lives in semantics;
     // the cron segment carries its count.
@@ -298,31 +331,39 @@ class _SessionDrawerState extends ConsumerState<SessionDrawer> {
       padding: const EdgeInsets.only(left: 28, bottom: 2),
       child: Row(
         children: [
-          segment('chats', i18n.t('workspace:filter.chats'),
-              Icons.chat_bubble_outline),
-          const SizedBox(width: 2),
           segment(
-              'cron', i18n.t('workspace:filter.cron'), Icons.schedule),
+            'chats',
+            i18n.t('workspace:filter.chats'),
+            Icons.chat_bubble_outline,
+          ),
+          const SizedBox(width: 2),
+          segment('cron', i18n.t('workspace:filter.cron'), Icons.schedule),
         ],
       ),
     );
   }
 
   Widget _groupHeader(
-      I18nState i18n, BossipTokens t, Project? project, bool searching) {
+    I18nState i18n,
+    BossipTokens t,
+    Project? project,
+    bool searching,
+  ) {
     final id = project?.id ?? '__loose';
     final name = project?.name ?? i18n.t('workspace:unsorted');
     final collapsed = _collapsed.contains(id);
-    final selected = project?.id != null &&
+    final selected =
+        project?.id != null &&
         ref.watch(selectedProjectProvider) == project?.id;
     return InkWell(
       onTap: searching
           ? null
           : () => setState(() {
-                if (!_collapsed.remove(id)) _collapsed.add(id);
-              }),
-      onLongPress:
-          project == null ? null : () => _showProjectActions(i18n, project),
+              if (!_collapsed.remove(id)) _collapsed.add(id);
+            }),
+      onLongPress: project == null
+          ? null
+          : () => _showProjectActions(i18n, project),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
         child: Row(
@@ -350,8 +391,10 @@ class _SessionDrawerState extends ConsumerState<SessionDrawer> {
               Container(
                 width: 6,
                 height: 6,
-                decoration:
-                    BoxDecoration(color: t.accent, shape: BoxShape.circle),
+                decoration: BoxDecoration(
+                  color: t.accent,
+                  shape: BoxShape.circle,
+                ),
               ),
             ],
             const Spacer(),
@@ -370,9 +413,15 @@ class _SessionDrawerState extends ConsumerState<SessionDrawer> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: Icon(Icons.check_circle_outline, size: 20, color: t.n700),
-              title: Text(i18n.t('workspace:newChatIn'),
-                  style: TextStyle(fontSize: FontSizes.base, color: t.ink)),
+              leading: Icon(
+                Icons.check_circle_outline,
+                size: 20,
+                color: t.n700,
+              ),
+              title: Text(
+                i18n.t('workspace:newChatIn'),
+                style: TextStyle(fontSize: FontSizes.base, color: t.ink),
+              ),
               onTap: () {
                 Navigator.pop(sheetContext);
                 ref.read(selectedProjectProvider.notifier).state = project.id;
@@ -382,8 +431,10 @@ class _SessionDrawerState extends ConsumerState<SessionDrawer> {
             ),
             ListTile(
               leading: Icon(Icons.delete_outline, size: 20, color: t.danger),
-              title: Text(i18n.t('workspace:deleteProject'),
-                  style: TextStyle(fontSize: FontSizes.base, color: t.danger)),
+              title: Text(
+                i18n.t('workspace:deleteProject'),
+                style: TextStyle(fontSize: FontSizes.base, color: t.danger),
+              ),
               onTap: () {
                 Navigator.pop(sheetContext);
                 _confirmDeleteProject(i18n, project);
@@ -403,10 +454,14 @@ class _SessionDrawerState extends ConsumerState<SessionDrawer> {
   }
 
   Future<void> _promptRenameSession(I18nState i18n, Session session) async {
-    final title =
-        await _promptText(i18n.t('workspace:rename'), initial: session.title);
+    final title = await _promptText(
+      i18n.t('workspace:rename'),
+      initial: session.title,
+    );
     if (title != null && title.isNotEmpty) {
-      await ref.read(workspaceProvider.notifier).renameSession(session.id, title);
+      await ref
+          .read(workspaceProvider.notifier)
+          .renameSession(session.id, title);
     }
   }
 
@@ -462,8 +517,10 @@ class _SessionDrawerState extends ConsumerState<SessionDrawer> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: Text(title, style: const TextStyle(fontSize: FontSizes.lg)),
-        content: Text(body,
-            style: TextStyle(fontSize: FontSizes.sm, color: t.n700)),
+        content: Text(
+          body,
+          style: TextStyle(fontSize: FontSizes.sm, color: t.n700),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
@@ -486,11 +543,7 @@ class _SessionDrawerState extends ConsumerState<SessionDrawer> {
 /// A drawer nav row: icon column + label, the shape the web sidebar uses for
 /// everything above the project tree.
 class _NavRow extends StatelessWidget {
-  const _NavRow({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
+  const _NavRow({required this.icon, required this.label, required this.onTap});
 
   final IconData icon;
   final String label;

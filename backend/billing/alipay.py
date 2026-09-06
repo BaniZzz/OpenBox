@@ -20,7 +20,7 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
-from billing.providers import Checkout, PaidReceipt, CancelledReceipt, VerifiedReceipt, TradeNotCreated
+from billing.providers import AppCheckout, Checkout, PaidReceipt, CancelledReceipt, VerifiedReceipt, TradeNotCreated
 from billing.service import BillingError
 
 GATEWAYS = {
@@ -131,6 +131,29 @@ class AlipayPaymentProvider:
         # Alipay deduplicates a merchant's out_trade_no. Never invent a new order
         # on timeout/retry, including while its first notification is in flight.
         return Checkout(url, order_id)
+
+    async def create_app_checkout(
+        self, *, order_id: str, amount_fen: int, callback_url: str | None
+    ) -> AppCheckout:
+        """Build the signed order string consumed by the official mobile SDKs.
+
+        Signing stays on the server. The SDK result is deliberately not accepted
+        as settlement evidence; notifications and signed trade queries remain the
+        only paths that can credit a workspace.
+        """
+        extra = {}
+        if self.confirmation_mode == "callback":
+            if not callback_url:
+                raise BillingError("PAYMENT_UNAVAILABLE", "Configure an HTTPS Alipay callback URL")
+            extra["notify_url"] = _https_url(callback_url)
+        params = self._request("alipay.trade.app.pay", {
+            "out_trade_no": order_id, "total_amount": f"{Decimal(amount_fen) / 100:.2f}",
+            "subject": self.subject, "product_code": "QUICK_MSECURITY_PAY",
+        }, **extra)
+        payload = urlencode(params)
+        if len(payload) > 8192:
+            raise BillingError("PAYMENT_INVALID_CHECKOUT", "Alipay app order string is too large")
+        return AppCheckout(payload, order_id)
 
     def _receipt(self, params: Mapping) -> VerifiedReceipt | None:
         status = params.get("trade_status")

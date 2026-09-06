@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../shared/appearance/tokens.dart';
 import '../../shared/appearance/type_scale.dart';
+import '../../shared/download/native_download.dart';
 import '../../shared/i18n/i18n.dart';
 import '../../shared/models/resource.dart';
 import '../../shared/utils/error_text.dart';
@@ -30,10 +30,17 @@ class _ResourceDetailPageState extends ConsumerState<ResourceDetailPage> {
 
   Future<void> _download() async {
     try {
-      final url =
-          await ref.read(resourcesApiProvider).downloadUrl(_resource.id);
+      final url = await ref
+          .read(resourcesApiProvider)
+          .downloadUrl(_resource.id);
       if (url != null) {
-        await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+        await ref
+            .read(nativeDownloadProvider)
+            .saveUrl(
+              url: url,
+              suggestedName: _resource.name,
+              mimeType: _resource.mime,
+            );
       }
     } catch (e) {
       _reportError(e);
@@ -96,7 +103,11 @@ class _ResourceDetailPageState extends ConsumerState<ResourceDetailPage> {
         ),
         actions: [
           IconButton(
-            icon: Icon(Icons.drive_file_rename_outline, size: 19, color: t.n700),
+            icon: Icon(
+              Icons.drive_file_rename_outline,
+              size: 19,
+              color: t.n700,
+            ),
             tooltip: i18n.t('resources:actions.rename'),
             onPressed: _rename,
           ),
@@ -132,19 +143,19 @@ class _ResourceDetailPageState extends ConsumerState<ResourceDetailPage> {
 }
 
 Resource _copyWithName(Resource resource, String name) => Resource(
-      id: resource.id,
-      name: name,
-      mime: resource.mime,
-      size: resource.size,
-      kind: resource.kind,
-      source: resource.source,
-      sandboxPath: resource.sandboxPath,
-      url: resource.url,
-      projectId: resource.projectId,
-      sessionId: resource.sessionId,
-      status: resource.status,
-      createdAt: resource.createdAt,
-    );
+  id: resource.id,
+  name: name,
+  mime: resource.mime,
+  size: resource.size,
+  kind: resource.kind,
+  source: resource.source,
+  sandboxPath: resource.sandboxPath,
+  url: resource.url,
+  projectId: resource.projectId,
+  sessionId: resource.sessionId,
+  status: resource.status,
+  createdAt: resource.createdAt,
+);
 
 /// date | type | size, plus the source badge (web's detail header line).
 class _MetaHeader extends ConsumerWidget {
@@ -156,8 +167,8 @@ class _MetaHeader extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final t = context.tokens;
     final i18n = ref.watch(i18nProvider);
-    final typeLabel = resource.mime.isNotEmpty &&
-            resource.mime != 'application/octet-stream'
+    final typeLabel =
+        resource.mime.isNotEmpty && resource.mime != 'application/octet-stream'
         ? resource.mime
         : i18n.t(kindLabelKey(resource.kind));
     final created = resource.createdAt;

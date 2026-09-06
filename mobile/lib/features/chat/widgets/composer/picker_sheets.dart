@@ -9,21 +9,90 @@ import '../../state/chat_session_controller.dart';
 import '../../state/config_providers.dart';
 import '../../utils/reasoning.dart';
 
-/// Model picker bottom sheet (web `ModelPicker`): checked list from
-/// `GET /api/agent/config`.
+/// Mobile model picker: models from `GET /api/agent/config`, followed by a
+/// second sheet for the reasoning strengths declared by the chosen model.
+/// Models without strengths are selected immediately.
 Future<void> showModelPicker(
   BuildContext context,
   WidgetRef ref, {
   required String sessionKey,
   required String? currentModel,
-}) {
+  required String? currentVariant,
+}) async {
   final t = context.tokens;
   final i18n = ref.read(i18nProvider);
   final config = ref.read(appConfigProvider).valueOrNull;
   final models = config?.models ?? const <ModelInfo>[];
   final active = ref.read(pickedModelProvider(sessionKey)) ??
       (currentModel?.isNotEmpty == true ? currentModel : config?.defaultModel);
-  return showModalBottomSheet<void>(
+
+  ReasoningChoice choiceFor(ModelInfo model) => resolveReasoning(
+        model: model,
+        sessionModel: currentModel,
+        sessionVariant: currentVariant,
+        pick: ref.read(
+            pickedVariantProvider(reasoningKey(sessionKey, model.id))),
+      );
+
+  void choose(ModelInfo model, [String? level]) {
+    if (model.variants.isNotEmpty) {
+      ref
+          .read(pickedVariantProvider(reasoningKey(sessionKey, model.id))
+              .notifier)
+          .state = Variant(level);
+    }
+    ref.read(pickedModelProvider(sessionKey).notifier).state = model.id;
+  }
+
+  Widget modelRow(BuildContext sheetContext, ModelInfo model) {
+    final isActive = model.id == active;
+    final choice = choiceFor(model);
+    final hasReasoning = choice.variants.isNotEmpty;
+    return ListTile(
+      dense: true,
+      title: Text(model.name,
+          style: TextStyle(fontSize: FontSizes.base, color: t.ink)),
+      subtitle: model.provider == null
+          ? null
+          : Text(model.provider!,
+              style: TextStyle(fontSize: FontSizes.xs, color: t.n500)),
+      trailing: isActive
+          ? Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (hasReasoning) ...[
+                  Text(
+                    _reasoningChoiceLabel(i18n, choice),
+                    style: TextStyle(fontSize: FontSizes.xs, color: t.n500),
+                  ),
+                  const SizedBox(width: 6),
+                ],
+                Icon(Icons.check, size: 18, color: t.a700),
+                if (hasReasoning)
+                  Icon(Icons.chevron_right, size: 18, color: t.n500),
+              ],
+            )
+          : (hasReasoning
+              ? Icon(Icons.chevron_right, size: 18, color: t.n500)
+              : null),
+      onTap: () async {
+        Navigator.pop(sheetContext);
+        if (!hasReasoning) {
+          choose(model);
+          return;
+        }
+        if (!context.mounted) return;
+        await _showModelReasoningPicker(
+          context,
+          model: model,
+          choice: choice,
+          onPick: (level) => choose(model, level),
+        );
+      },
+    );
+  }
+
+  await showModalBottomSheet<void>(
     context: context,
     builder: (sheetContext) => SafeArea(
       child: ListView(
@@ -41,45 +110,26 @@ Future<void> showModelPicker(
               ),
             ),
           ),
-          for (final model in models)
-            ListTile(
-              dense: true,
-              title: Text(model.name,
-                  style: TextStyle(fontSize: FontSizes.base, color: t.ink)),
-              subtitle: model.provider == null
-                  ? null
-                  : Text(model.provider!,
-                      style:
-                          TextStyle(fontSize: FontSizes.xs, color: t.n500)),
-              trailing: model.id == active
-                  ? Icon(Icons.check, size: 18, color: t.a700)
-                  : null,
-              onTap: () {
-                ref.read(pickedModelProvider(sessionKey).notifier).state =
-                    model.id;
-                Navigator.pop(sheetContext);
-              },
-            ),
+          for (final model in models) modelRow(sheetContext, model),
         ],
       ),
     ),
   );
 }
 
-/// Reasoning-strength picker (web `ReasoningPicker`): the levels the active
-/// model declares, plus "default" which clears the conversation override.
-/// Never opened for a model that declares none — the pill is hidden then.
-Future<void> showReasoningPicker(
-  BuildContext context,
-  WidgetRef ref, {
-  required String sessionKey,
-  required String modelId,
+/// Second step of the mobile model picker. The model is not committed until a
+/// strength (or its default) is chosen, so dismissing this sheet changes
+/// neither half of the pair.
+Future<void> _showModelReasoningPicker(
+  BuildContext context, {
+  required ModelInfo model,
   required ReasoningChoice choice,
+  required void Function(String?) onPick,
 }) {
   final t = context.tokens;
-  final i18n = ref.read(i18nProvider);
+  final container = ProviderScope.containerOf(context, listen: false);
+  final i18n = container.read(i18nProvider);
   final defaultId = choice.defaultId;
-  final key = reasoningKey(sessionKey, modelId);
 
   Widget row(BuildContext sheetContext, String? id, String label) => ListTile(
         dense: true,
@@ -89,7 +139,7 @@ Future<void> showReasoningPicker(
             ? Icon(Icons.check, size: 18, color: t.a700)
             : null,
         onTap: () {
-          ref.read(pickedVariantProvider(key).notifier).state = Variant(id);
+          onPick(id);
           Navigator.pop(sheetContext);
         },
       );
@@ -104,7 +154,7 @@ Future<void> showReasoningPicker(
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
             child: Text(
-              i18n.t('chat:reasoning.pick'),
+              model.name,
               style: TextStyle(
                 fontSize: FontSizes.sm,
                 fontWeight: FontWeight.w600,
@@ -127,6 +177,17 @@ Future<void> showReasoningPicker(
       ),
     ),
   );
+}
+
+String _reasoningChoiceLabel(I18nState i18n, ReasoningChoice choice) {
+  final activeId = choice.activeId;
+  if (activeId != null) return reasoningLevelLabel(i18n, activeId);
+  final defaultId = choice.defaultId;
+  return defaultId == null
+      ? i18n.t('chat:reasoning.default')
+      : i18n.t('chat:reasoning.defaultWithLevel', vars: {
+          'level': reasoningLevelLabel(i18n, defaultId),
+        });
 }
 
 /// Known level ids get a translated label; anything else shows the raw id,

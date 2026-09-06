@@ -1,5 +1,8 @@
 """Integration test for auth API — register, login, refresh, token validation."""
 import os
+from types import SimpleNamespace
+from urllib.parse import parse_qs, urlsplit
+
 import pytest
 from httpx import AsyncClient, ASGITransport
 
@@ -146,3 +149,41 @@ async def test_ticket(client):
     assert resp.status_code == 200
     ticket = resp.json()["ticket"]
     assert len(ticket) > 20
+
+
+async def test_logto_logout_revokes_cookie_and_redirects_to_end_session(client, monkeypatch):
+    """The browser leaves the SPA once; OpenBox and Logto end in one response."""
+    from core import config as config_module
+
+    fake_config = SimpleNamespace(
+        logto_endpoint="https://auth.example.test",
+        logto_issuer="https://auth.example.test/oidc",
+        logto_jwks_uri="",
+        logto_app_id="web-app-id",
+        logto_native_app_id="native-app-id",
+        logto_app_secret="",
+        logto_post_logout_redirect_uri="https://app.example.test",
+    )
+    monkeypatch.setattr(config_module, "get_config", lambda: fake_config)
+
+    registered = await client.post("/api/auth/register", json={
+        "username": "logoutuser1",
+        "password": "password123",
+    })
+    assert registered.status_code == 200, registered.text
+    assert client.cookies.get("refresh_token")
+
+    response = await client.get("/api/auth/logto/logout", follow_redirects=False)
+
+    assert response.status_code == 302
+    target = urlsplit(response.headers["location"])
+    assert f"{target.scheme}://{target.netloc}{target.path}" == (
+        "https://auth.example.test/oidc/session/end"
+    )
+    assert parse_qs(target.query) == {
+        "client_id": ["web-app-id"],
+        "post_logout_redirect_uri": ["https://app.example.test"],
+    }
+    assert "refresh_token=" in response.headers["set-cookie"]
+    assert "Max-Age=0" in response.headers["set-cookie"]
+    assert client.cookies.get("refresh_token") is None

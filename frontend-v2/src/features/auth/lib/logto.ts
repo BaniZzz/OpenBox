@@ -7,36 +7,16 @@
  * origin allowlist, so a server-to-server exchange is simpler and safer.
  */
 import { env } from "@/shared/config/env"
+import { getLogtoConfig, type LogtoConfig } from "@/shared/api/logto"
 import type { AuthUser } from "@/shared/types/api"
 
 const VERIFIER_KEY = "logto:code_verifier"
 const STATE_KEY = "logto:state"
 const FROM_KEY = "logto:from"
 
-export interface LogtoConfig {
-  enabled: boolean
-  endpoint: string
-  issuer: string
-  app_id: string
-  redirect_uri: string
-  post_logout_redirect_uri: string
-}
-
 export interface LogtoResult {
   access_token: string
   user: AuthUser
-}
-
-/** Fetch the public PKCE config; returns null when Logto is disabled/unreachable. */
-export async function getLogtoConfig(): Promise<LogtoConfig | null> {
-  try {
-    const resp = await fetch(`${env.apiBase}/api/auth/logto/config`)
-    if (!resp.ok) return null
-    const data = (await resp.json()) as LogtoConfig
-    return data.enabled ? data : null
-  } catch {
-    return null
-  }
 }
 
 function base64UrlEncode(bytes: Uint8Array): string {
@@ -81,7 +61,7 @@ export type SsoScreen = "sign_in" | "register"
 /** Redirects the browser to Logto. Does not return. */
 export async function beginLogtoLogin(
   config: LogtoConfig,
-  opts: { firstScreen?: SsoScreen } = {},
+  opts: { firstScreen?: SsoScreen; redirect?: (url: string) => void } = {},
 ): Promise<void> {
   const verifier = randomString(32)
   const state = randomString(16)
@@ -96,12 +76,18 @@ export async function beginLogtoLogin(
     state,
     code_challenge: await pkceChallenge(verifier),
     code_challenge_method: "S256",
-    prompt: "consent",
+    // A completed logout should have removed the Logto cookie. Requiring the
+    // login screen as well is the native/web parity fallback used by bossip:
+    // a stale system-browser cookie must never silently restore the old user.
+    // Keep consent too because this request includes offline_access; Logto's
+    // guidance calls for the combined prompt in that case.
+    prompt: "login consent",
   })
   // Logto opens its sign-in screen by default; a "get started" CTA means the
   // person expects the sign-up form instead.
   if (opts.firstScreen === "register") params.set("first_screen", "register")
-  window.location.assign(`${config.endpoint}/oidc/auth?${params.toString()}`)
+  const redirect = opts.redirect ?? ((url: string) => window.location.assign(url))
+  redirect(`${config.endpoint}/oidc/auth?${params.toString()}`)
 }
 
 /** True when the current URL carries a Logto authorization result. */

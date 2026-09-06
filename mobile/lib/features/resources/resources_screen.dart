@@ -1,10 +1,10 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../shared/appearance/tokens.dart';
 import '../../shared/appearance/type_scale.dart';
+import '../../shared/download/native_download.dart';
 import '../../shared/i18n/i18n.dart';
 import '../../shared/models/resource.dart';
 import '../../shared/utils/error_text.dart';
@@ -34,8 +34,9 @@ class ResourcesScreen extends ConsumerStatefulWidget {
 const _page = 100;
 
 class _ResourcesScreenState extends ConsumerState<ResourcesScreen> {
-  late ResourceQuery _query =
-      ResourceQuery(project: widget.initialProject ?? allProjects);
+  late ResourceQuery _query = ResourceQuery(
+    project: widget.initialProject ?? allProjects,
+  );
   final _search = TextEditingController();
   bool _searching = false;
   final _selected = <String>{};
@@ -68,7 +69,9 @@ class _ResourcesScreenState extends ConsumerState<ResourcesScreen> {
       setState(() => _uploading[file.name] = 0);
       try {
         final bytes = await file.readAsBytes();
-        await ref.read(resourcesApiProvider).upload(
+        await ref
+            .read(resourcesApiProvider)
+            .upload(
               name: file.name,
               mime: mimeForName(file.name),
               bytes: bytes,
@@ -100,11 +103,17 @@ class _ResourcesScreenState extends ConsumerState<ResourcesScreen> {
         });
       case ResourceAction.download:
         await _guard(() async {
-          final url =
-              await ref.read(resourcesApiProvider).downloadUrl(resource.id);
+          final url = await ref
+              .read(resourcesApiProvider)
+              .downloadUrl(resource.id);
           if (url != null) {
-            await launchUrl(Uri.parse(url),
-                mode: LaunchMode.externalApplication);
+            await ref
+                .read(nativeDownloadProvider)
+                .saveUrl(
+                  url: url,
+                  suggestedName: resource.name,
+                  mimeType: resource.mime,
+                );
           }
         });
       case ResourceAction.delete:
@@ -129,7 +138,9 @@ class _ResourcesScreenState extends ConsumerState<ResourcesScreen> {
     if (done > 0) {
       ref
           .read(toastProvider.notifier)
-          .info(ref.read(i18nProvider).t('resources:toast.deleted', count: done));
+          .info(
+            ref.read(i18nProvider).t('resources:toast.deleted', count: done),
+          );
     }
   }
 
@@ -168,8 +179,7 @@ class _ResourcesScreenState extends ConsumerState<ResourcesScreen> {
                   isDense: true,
                   border: InputBorder.none,
                   hintText: i18n.t('resources:list.searchPlaceholder'),
-                  hintStyle:
-                      TextStyle(fontSize: FontSizes.base, color: t.n600),
+                  hintStyle: TextStyle(fontSize: FontSizes.base, color: t.n600),
                 ),
                 onChanged: (value) => _setQuery(_query.copyWith(q: value)),
               )
@@ -192,8 +202,11 @@ class _ResourcesScreenState extends ConsumerState<ResourcesScreen> {
               ),
         actions: [
           IconButton(
-            icon: Icon(_searching ? Icons.close : Icons.search,
-                size: 20, color: t.n700),
+            icon: Icon(
+              _searching ? Icons.close : Icons.search,
+              size: 20,
+              color: t.n700,
+            ),
             tooltip: i18n.t('resources:actions.search'),
             onPressed: () => setState(() {
               _searching = !_searching;
@@ -231,7 +244,8 @@ class _ResourcesScreenState extends ConsumerState<ResourcesScreen> {
               onRefresh: () async => bumpResources(ref),
               child: page.when(
                 loading: () => const Center(
-                    child: CircularProgressIndicator(strokeWidth: 2)),
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
                 error: (error, _) => _Message(
                   title: errorText(i18n, error),
                   hint: i18n.t('common:action.retry'),
@@ -323,8 +337,10 @@ class _UploadRow extends ConsumerWidget {
               style: TextStyle(fontSize: FontSizes.sm, color: t.n700),
             ),
           ),
-          Text('${(progress * 100).round()}%',
-              style: TextStyle(fontSize: FontSizes.xs2, color: t.n600)),
+          Text(
+            '${(progress * 100).round()}%',
+            style: TextStyle(fontSize: FontSizes.xs2, color: t.n600),
+          ),
         ],
       ),
     );
@@ -365,8 +381,10 @@ class _Footer extends ConsumerWidget {
         child: TextButton(
           onPressed: onLoadMore,
           child: Text(
-            i18n.t('resources:list.loadMore',
-                vars: {'shown': shown, 'total': data.total}),
+            i18n.t(
+              'resources:list.loadMore',
+              vars: {'shown': shown, 'total': data.total},
+            ),
             style: TextStyle(fontSize: FontSizes.xs, color: t.n700),
           ),
         ),
@@ -390,11 +408,15 @@ class _Message extends StatelessWidget {
         Center(
           child: Column(
             children: [
-              Text(title,
-                  style: TextStyle(fontSize: FontSizes.base, color: t.ink)),
+              Text(
+                title,
+                style: TextStyle(fontSize: FontSizes.base, color: t.ink),
+              ),
               const SizedBox(height: 4),
-              Text(hint,
-                  style: TextStyle(fontSize: FontSizes.xs, color: t.n600)),
+              Text(
+                hint,
+                style: TextStyle(fontSize: FontSizes.xs, color: t.n600),
+              ),
             ],
           ),
         ),

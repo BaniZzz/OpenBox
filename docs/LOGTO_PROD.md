@@ -83,8 +83,9 @@ bossip-web **before** flipping `LOGTO_REDIRECT_URI`.
 The phone app is a **separate** Logto application because a native client cannot
 keep a secret — it is a public client, and its App ID is a second accepted
 ID-token audience. The backend hands it to the app via `native_app_id` in
-`/api/auth/logto/config`; the app reads it in `mobile/lib/features/auth/api/logto.dart`
-and only shows the SSO button when it is non-empty.
+`/api/auth/logto/config`; the app reads it in
+`mobile/lib/shared/api/logto_session.dart` and only shows the SSO button when
+it is non-empty.
 
 | Setting | Value |
 |---|---|
@@ -106,8 +107,67 @@ sides:**
 2026-09-04). A stale `io.bossip.mobile://callback` entry is also present but
 matches nothing in the app — safe to delete.
 
+The same `com.bossip.bipmobile://callback` URI is registered under **Post
+sign-out redirect URIs**. The app uses it as
+`Env.ssoPostLogoutRedirectUri` (overridable with
+`--dart-define=SSO_POST_LOGOUT_REDIRECT_URI=...`). Keep both Logto lists and
+both app build values aligned if the scheme changes.
+
 Leave `LOGTO_NATIVE_APP_ID` unset to turn mobile SSO off (the app falls back to
 its account/password form).
+
+## Sign-out contract
+
+Signing out has two independent layers and both are required:
+
+1. The OpenBox refresh token must be revoked and its cookie expired; each
+   client also clears its in-memory access token, user/workspace scope and live
+   socket.
+2. The centralized Logto browser session must enter the OIDC end-session flow.
+
+The two clients deliberately use different orchestration appropriate to their
+runtime:
+
+- **Web:** the menu performs one full-page navigation to
+  `GET /api/auth/logto/logout`. That backend response revokes the OpenBox
+  refresh token, expires its cookie, and immediately returns a 302 to
+  `{LOGTO_ISSUER}/session/end` with `client_id` and the registered
+  `post_logout_redirect_uri`. Do **not** clear the SPA auth store or navigate to
+  `/login` first: `SsoEntry` can otherwise start a fresh authorization request
+  while the end-session request is still in flight, silently signing the same
+  user back in. This is the same single-navigation boundary used by the working
+  `workspace/bossip` implementation.
+- **Mobile:** the controller calls `POST /api/auth/logout`, clears local
+  OpenBox/workspace/socket state, then calls the official Dart SDK's
+  `LogtoClient.signOut(postLogoutRedirectUri)`. The SDK clears its stored
+  tokens and, on platforms with a persistent browser session, completes the
+  same end-session redirect.
+
+Do not replace step 2 with a route back to the landing page. That only signs
+out of OpenBox; Logto's browser cookie survives and the next sign-in can return
+to the old account without an account prompt. The implementation follows
+[Logto's sign-out flow](https://docs.logto.io/end-user-flows/sign-out) and
+[Flutter quick start](https://docs.logto.io/quick-starts/flutter).
+
+Mobile additionally deletes the SDK's three local token entries in a `finally`
+path. Therefore a discovery/revocation/browser failure cannot restore the
+local session; centralized logout remains best-effort when the identity server
+itself is unreachable.
+
+Both Web and mobile authorize requests also include `prompt=login`. The actual
+value is `login consent`, retaining `consent` because the clients request
+`offline_access`, as required by Logto's guidance. The `login` part is a
+defense-in-depth invariant copied from the production `workspace/bossip`
+native flow: if a platform browser keeps a stale SSO cookie or a centralized
+logout is interrupted, starting a new login must show Logto's login screen
+instead of silently restoring the account that was explicitly signed out.
+
+Production registration was read back from the self-hosted Logto database on
+2026-09-06:
+
+- `bossip-web`: `https://ai.bossipai.com.cn/callback` is a Redirect URI and
+  `https://ai.bossipai.com.cn` is a Post sign-out redirect URI.
+- `bossip-mobile`: `com.bossip.bipmobile://callback` is present in both lists.
 
 ## Smoke test after deploy
 
@@ -122,11 +182,32 @@ curl -s https://ai.bossipai.com.cn/api/auth/logto/config | jq
 # 2. Logto OIDC discovery is reachable
 curl -s https://auth.bossipai.com.cn/oidc/.well-known/openid-configuration | jq .issuer
 #    expect: https://auth.bossipai.com.cn/oidc
+
+# 3. Web logout is a single server-side redirect (do not use -L here)
+curl -sS -D - -o /dev/null https://ai.bossipai.com.cn/api/auth/logto/logout
+#    expect: HTTP 302, refresh_token Max-Age=0, and Location beginning with
+#            https://auth.bossipai.com.cn/oidc/session/end
 ```
 
 Then click **Sign in** on `https://ai.bossipai.com.cn/login`: it must land on
 `auth.bossipai.com.cn`, and after login return to `.../callback` and complete —
 no `invalid redirect_uri` and no `invalid_client`.
+
+Finally click **Sign out**. The browser must visit
+`auth.bossipai.com.cn/oidc/session/end`, return to the app origin, and a new
+sign-in must show Logto's login page instead of silently reusing the previous
+account. On Android the SDK briefly opens the same browser flow and returns
+through the custom scheme;
+on iOS the SDK uses an ephemeral authentication session and still clears its
+secure token store.
+
+Production acceptance completed on 2026-09-06 with image tag
+`20260906-logto-logout3-3586742`: the HTTP contract above passed, all four
+containers were healthy, and the identical single-navigation logout
+implementation signed `andrewwang` out to the landing page in a real Chrome
+session. After the final prompt-only rebuild, starting sign-in again stopped
+on Logto's credential page; it did not return silently to the previous OpenBox
+session.
 
 ## Admin console access (ops note)
 

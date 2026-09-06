@@ -8,6 +8,7 @@ import '../shared/appearance/type_scale.dart';
 import '../shared/i18n/i18n.dart';
 import '../shared/widgets/toast.dart';
 import 'router.dart';
+import 'workspace_bootstrap.dart';
 
 /// Root widget: wires appearance (theme × mode × font-scale) and i18n into
 /// MaterialApp.router, and floats the toast host above every screen.
@@ -47,17 +48,14 @@ class BossipApp extends ConsumerWidget {
           ),
           // Tap on any empty area dismisses the keyboard — interactive
           // widgets win the gesture arena, so buttons/fields are unaffected.
-          child: GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onTap: () {
-              final focus = FocusManager.instance.primaryFocus;
-              if (focus != null && focus.context != null) focus.unfocus();
-            },
-            child: Stack(
-              children: [
-                ?child,
-                const ToastHost(),
-              ],
+          child: WorkspaceBootstrap(
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTap: () {
+                final focus = FocusManager.instance.primaryFocus;
+                if (focus != null && focus.context != null) focus.unfocus();
+              },
+              child: Stack(children: [?child, const ToastHost()]),
             ),
           ),
         );

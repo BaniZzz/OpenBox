@@ -9,18 +9,20 @@ class TokenUsage {
     this.total = 0,
     this.limit = 0,
     this.cost = 0,
+    this.credits,
     this.context = 0,
   });
 
   factory TokenUsage.fromJson(Map<String, dynamic> json) => TokenUsage(
-        input: asInt(json['input']) ?? 0,
-        output: asInt(json['output']) ?? 0,
-        cache: asInt(json['cache']) ?? 0,
-        total: asInt(json['total']) ?? 0,
-        limit: asInt(json['limit']) ?? 0,
-        cost: asDouble(json['cost']) ?? 0,
-        context: asInt(json['context']) ?? 0,
-      );
+    input: asInt(json['input']) ?? 0,
+    output: asInt(json['output']) ?? 0,
+    cache: asInt(json['cache']) ?? 0,
+    total: asInt(json['total']) ?? 0,
+    limit: asInt(json['limit']) ?? 0,
+    cost: asDouble(json['cost']) ?? 0,
+    credits: asString(json['credits']),
+    context: asInt(json['context']) ?? 0,
+  );
 
   final int input;
   final int output;
@@ -28,5 +30,6 @@ class TokenUsage {
   final int total;
   final int limit;
   final double cost;
+  final String? credits;
   final int context;
 }
