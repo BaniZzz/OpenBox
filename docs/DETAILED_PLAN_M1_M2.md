@@ -27,7 +27,8 @@
 | B2 / B3 记账与对账 | ⬜ **移到里程碑二开头** | 顺序 B2 计量层 → B3 对账 → B2 定价与账本 → B4；见「里程碑二」首段 |
 | C5 视频技能对照 | ⬜ 调研完成，执行单 `docs/C5_VIDEO_SKILL_ALIGNMENT.md` | 零冲突可随时开；采纳 24 条 / 有意不同 12 条；不复刻 gate.py |
 | A3 池 + A4 舰队 v0 | ✅ 2026-09-07 验收通过，已合 main `f6c4b37` | 5 台 prewarm（A2 机 + bossip 010–013 重建到 v3 40G `m-ihn7zmzukytina8qj`）；采购 0 台 ¥0；三源快照与告警在跑；自动采购/续期关。遗留：andrewwang 的按量机 `ecd-iu2s0ki7ez79l46sm`（09-04 起 ¥0.74/h）与 dev-shanghai 两条 tag_mismatch；A2 机是 4c8g 混在 6c12g 池里 |
-| **B 线注意** | ⚠️ | 队友 andrew 于 09-06 直接把「积分套餐 + 支付宝」推到 main 并部署 gw2（`usage_events / credit_ledger / payment_orders / billing_subscriptions`，`BILLING_MODE=shadow`，专业 599/月、旗舰 2100/月），与本计划 B2/B4 的拆分、价格（499/1999）、积分面值均不同，需对齐 |
+| **B 线** | 🔁 以队友实现为准（09-07 拍板） | 审查 `docs/BILLING_REVIEW_2026-09-07.md`：保留账本/支付/落账点；必修 F1–F8（同月重购不发积分、月末双发、流式 normalize 抛错、免费档与默认模式、幂等键、GET 写副作用）；缺层重排为 B2′（网关 token/影子上限/视频图片转写）→ B3′（对账）→ B4′（预检/状态机/桌面联动/代付）。价格已改 499/1999（`9b298e0`），面值与套餐积分待定 |
+| ~~B 线注意~~ | ⚠️ | 队友 andrew 于 09-06 直接把「积分套餐 + 支付宝」推到 main 并部署 gw2（`usage_events / credit_ledger / payment_orders / billing_subscriptions`，`BILLING_MODE=shadow`，专业 599/月、旗舰 2100/月），与本计划 B2/B4 的拆分、价格（499/1999）、积分面值均不同，需对齐 |
 | ~~A3 执行单~~ | | 原行：执行单 `docs/A3_A4_FLEET_POOL.md` | 已定（09-05）：基准镜像 openbox v2 `m-ccceuit7jn3xzwx45`；水位 5，靠收养 bossip-sh-001…013（除 007）12 台重建到 v2，先 5 台其余 reserve；规格 6c12g；dev-shanghai 不入池；本版无 webhook |
 | A3 / B4 / A5 / E1 / E2 | ⬜ | A5 等 A3 合并后；B4 等 B2；E1/E2 等文案 |
 
