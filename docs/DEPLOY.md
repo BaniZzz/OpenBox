@@ -18,7 +18,16 @@ Logto SSO 的取值另见 [LOGTO_PROD.md](LOGTO_PROD.md)。
 | 源码 | 有 `/opt/openbox/src`（git checkout），可就地构建 | **无源码**，镜像从外部装载 |
 | 沙箱 | `SANDBOX_PROVIDER=wuying` | `SANDBOX_PROVIDER=wuying` |
 
-### 2026-09-06：阿里云积分与支付宝发布
+### 2026-09-06：正式价格与项目名称修复（当前版本）
+
+- 阿里云前后端镜像已更新为 `20260906-project-prices-4cd8725`，源码提交 `4cd8725`；数据库升级至 `f3a5b7c9d1e4`。
+- 清空 `config/backend.env` 的 `BILLING_PLANS_FILE`，恢复专业版 599 元/月、7188 元/年，旗舰版 2100 元/月、25200 元/年。`BILLING_MODE=shadow` 保持不变。
+- 注册创建的默认项目统一命名为“默认空间”，补修 1 条遗留 `Default` 记录；项目列表按创建时间倒序，时间相同时按 ID 倒序。
+- 以本次发布前实际容器为准，保留 `WUYING_MODE=per_user`、`WUYING_ROUTING=per_desktop`、`POOL_ENABLED=true`、`POOL_AUTO_PURCHASE=false`。桌面池此前已由另一项更新启用，本次没有改动该开关；仅修改套餐目录环境变量。9 个无影相关源码文件内容一致，原 12 条桌面记录及归属关系保留。
+- 189 项相关测试通过；先在数据库副本验证迁移。浏览器确认“默认空间”、月付/年付原价、原专业版有效期和 290 积分余额；已支付的 0.10 元测试订单与订阅快照保持不变。前后端健康检查通过。
+- 本次配置和数据库备份：`/opt/openbox/backups/20260906-project-prices-4cd8725/activation-101803/`。回退代码时可先用本次镜像执行 `alembic downgrade e2f4a6b8c0d2`，该数据修复迁移的回退不会重新改回英文名称。
+
+### 2026-09-06：阿里云积分与支付宝首次发布（历史记录）
 
 - 发布目标为 **`https://ai.bossipai.com.cn` / `i-uf66pcsepxpc23v5qsts`**。
 - 前后端镜像：`20260906-billing-fleet-aaf1fff`，代码提交 `aaf1fff`，本地构建 `linux/amd64` 后传入服务器。
@@ -26,7 +35,7 @@ Logto SSO 的取值另见 [LOGTO_PROD.md](LOGTO_PROD.md)。
 - 数据库由 `a3f1e5c7d9b2` 升至合并版本 `e2f4a6b8c0d2`。先在数据库副本验证，原用户、工作空间、对话、项目、桌面和桌面池数据保持一致。
 - 保留 `WUYING_MODE=per_user`、`WUYING_ROUTING=per_desktop`、`POOL_ENABLED=false`、`POOL_AUTO_PURCHASE=false` 及所有原运行配置。9 条桌面记录与归属关系保留；未执行真实桌面关机/开机操作。
 - 支付通知为 `https://ai.bossipai.com.cn/api/billing/webhooks/alipay`，支付返回为 `/app/billing/orders`。密钥独立放在服务器 `secrets/alipay/`，以只读方式挂载，未打入镜像。
-- 当前按用户要求保留专业版 **0.10 元**、旗舰版 **0.20 元**测试价格；`BILLING_MODE=shadow`，模型用量记账但不扣余额。
+- 首次发布时按用户要求保留专业版 **0.10 元**、旗舰版 **0.20 元**测试价格；`BILLING_MODE=shadow`，模型用量记账但不扣余额。当前价格见上方更新记录。
 - 验证：前端 205 项、后端相关 195 项测试通过；公网前端与构建产物一致，支付宝真实签名查询成功，公网回调拒绝无效签名。尚未实际付款。
 - 配置和数据库备份位于服务器 `/opt/openbox/backups/20260906-billing-fleet-aaf1fff/`。新增 billing 表后回退旧镜像时，不要直接执行旧镜像的 `alembic upgrade head`；旧镜像不能识别新迁移编号。
 
