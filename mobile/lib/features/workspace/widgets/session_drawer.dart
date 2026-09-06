@@ -374,30 +374,48 @@ class _SessionDrawerState extends ConsumerState<SessionDrawer> {
               child: Icon(Icons.chevron_right, size: 14, color: t.n600),
             ),
             const SizedBox(width: 6),
-            Flexible(
-              child: Text(
-                name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: FontSizes.md,
-                  fontWeight: FontWeight.w500,
-                  color: t.ink,
-                ),
+            Expanded(
+              child: Row(
+                children: [
+                  Flexible(
+                    child: Text(
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: FontSizes.md,
+                        fontWeight: FontWeight.w500,
+                        color: t.ink,
+                      ),
+                    ),
+                  ),
+                  if (selected) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      width: 6,
+                      height: 6,
+                      decoration: BoxDecoration(
+                        color: t.accent,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
-            if (selected) ...[
-              const SizedBox(width: 6),
-              Container(
-                width: 6,
-                height: 6,
-                decoration: BoxDecoration(
-                  color: t.accent,
-                  shape: BoxShape.circle,
-                ),
-              ),
-            ],
-            const Spacer(),
+            IconButton(
+              key: ValueKey('new-chat-$id'),
+              tooltip: i18n.t('workspace:newChatIn'),
+              onPressed: () {
+                ref.read(selectedProjectProvider.notifier).state = project?.id;
+                Navigator.pop(context);
+                context.go(Paths.app);
+              },
+              visualDensity: VisualDensity.compact,
+              constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+              padding: EdgeInsets.zero,
+              icon: Icon(Icons.add, size: 16, color: t.n700),
+            ),
           ],
         ),
       ),

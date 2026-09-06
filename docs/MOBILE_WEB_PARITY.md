@@ -212,6 +212,7 @@ Web `/app/admin/fleet` 是仅 `user.role === "admin"` 可见的运维台，覆�
 6. **Native download**：已完成，不再借浏览器下载。
 7. **Logto logout**：Web 用单次服务端 302 原子完成 OpenBox Cookie 撤销与 Logto end-session，避免先渲染 `/login` 触发自动授权的竞态；移动端同时清理 OpenBox session、Logto SSO session，并在异常路径强制删除 SDK 本地令牌。两端登录都固定 `prompt=login consent`，既防止系统浏览器残留 Cookie 静默恢复刚退出的账号，也保留 `offline_access` 的授权语义。
 8. **移动端 Composer 控件**：移动端有意隐藏“执行/方案”入口，并把思考强度并入模型二级菜单；Web 保持原交互。
+9. **移动端新对话与执行环境入口**：项目行常驻且右侧对齐 `+`（手机没有 hover），点击进入该项目的空会话；空会话不再根据旧 `/api/containers` 列表显示“创建沙箱”，首条消息由后端按 workspace 自动连接无影，真正未就绪时继续走 `DESKTOP_NOT_READY` 云桌面引导。
 
 ## 完成记录
 
@@ -224,3 +225,4 @@ Web `/app/admin/fleet` 是仅 `user.role === "admin"` 可见的运维台，覆�
 | 2026-09-06 | 原生下载 | 本次提交 | 文件名单测、Android debug APK、iOS arm64 simulator 构建通过；模拟器实际弹出系统保存面板、回调 `saved=true`，并核对目标文件落盘 |
 | 2026-09-06 | Logto 双层退出 | 本次提交；生产 `20260906-logto-logout3-3586742` | 对照 `workspace/bossip` 修正 Web 退出竞态；后端单次 302/Cookie 撤销、两端 `prompt=login consent` 与移动端 OpenBox+Logto 编排回归通过；真实 Chrome 登出回首页且再次登录停在 Logto 凭证页；生产两应用的 Post sign-out redirect URI 已从 Logto 数据库回读确认 |
 | 2026-09-07 | iOS 历史记录渲染 + Composer 精简 | 本次提交 | 历史会话含工作日志、工具状态、最终答复和截图均正常展示；Composer 隐藏“执行/方案”，思考强度并入模型二级菜单，agent/variant 发送协议保留；Flutter analyze、tests 与 iOS 模拟器交互通过 |
+| 2026-09-07 | 移动端项目新对话入口 + 空会话执行环境判断 | 本次提交 | 项目行常驻新对话按钮；移除旧容器列表触发的误导性“创建沙箱”卡，保留首条消息的无影未就绪引导 |

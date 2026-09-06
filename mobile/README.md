@@ -72,13 +72,14 @@ iOS 无需额外 SSO 配置(ASWebAuthenticationSession 直接吃 callbackUrlSche
 | `RunErrorNotice`(失败原因常驻在输入框上方) | `widgets/run_error_notice.dart` |
 | `Toast.tsx`(顶部卡片、按字数计算停留时长、可关闭) | `shared/widgets/toast.dart`(同样的 info/success/warning/error 与去重规则) |
 | 技能中心(`features/skills-center`,双栏 + 弹窗) | `/app/skills`(`SkillsScreen`):我的/商店切页 + 类型 chip + 搜索,五个弹窗全部改成底部抽屉;技能包折叠、依赖补装、发布确认、聊天创建都在 |
-| 左侧 Sidebar | 抽屉 `SessionDrawer` |
+| 左侧 Sidebar | 抽屉 `SessionDrawer`；手机没有 hover，项目行常驻显示 `+` 新建对话入口，不把核心动作藏在长按菜单里 |
 | Workspace switcher / Team / invite | `active_workspace_store.dart` + 抽屉切换器 + 设置页 Team + `/invite/:token`；所有业务缓存按当前 workspace 隔离，他人会话只读 |
 | Logto logout | `shared/api/logto_session.dart` + `auth_store.dart`：OpenBox session 与 Logto SSO session 同时退出；登录固定 `prompt=login consent` 防止旧 SSO Cookie 静默恢复账号并保留离线授权；Android 完成 end-session 回跳，iOS ephemeral session 与安全存储令牌一并清理 |
 | `/app/billing/:tab?` | `/app/billing/:tab` 订购/用量/订单三页；余额显示在用户行，订单回前台主动核对；支付宝 Android/iOS 原生 SDK 接线见 `docs/BILLING_PLAN.md` §6 |
 | 右侧 WorkbenchPanel(菜单 tab + 审阅/终端/浏览器/文件/云桌面/定时) | 路由 `/app/w/:sessionId` = **菜单页**(`WorkbenchScreen` + `WorkbenchMenu`,与 web `MenuTab` 同一份入口与实时提示);点一行 push `WorkbenchSurfacePage` —— 手机没有 tab 条,返回手势和返回箭头就是 web 那条 tab 条的替代 |
 | DesktopTab(Wuying Web SDK) | `desktop_bridge.dart`(SDK 引导页 + JS 桥)+ `desktop_tab.dart`(Flutter UI)。原生轮询 `/api/desktop/ticket`(202→task_id 重试),WebView 装载 SDK,JS channel 回报 connected/error。**桌面固定 1920×1080**:客户端用 `uiConfig.fixedResolution`/`maxResolution` 锁住分辨率 —— 手机的视口一直在变(旋转/全屏/键盘),不锁住 SDK 会反过来把远端分辨率改掉,agent 看的桌面就在它脚下变形了;iframe **直接定尺**而不是 CSS transform 缩放,变换过的画面会让 SDK 观测到与手指落点不同的坐标系。**横屏全屏**:`SystemChrome` 切 landscape + `immersiveSticky`,`onImmersive` 回调让 `WorkbenchSurfacePage` 摘掉 AppBar(不 push 新路由 —— 重新挂载 WebView 会把流打断);退出/dispose 都恢复竖屏。**指针**:`setMouseMode('Client')` 绝对坐标,手指点哪就点哪(相对模式需要指针锁定,WebView 给不了,实测点击直接失效,所以不提供)。**键盘**:`session.openSoftKeyboard(true)` 打开 SDK 自带的画面内键盘 —— 这是文字进 guest 的唯一通道,带 Esc/F1-F12/Ctrl/Alt 和切 guest 输入法的 中/En 键 |
 | BrowserTab(dev-browser 截图流) | `browser_tab.dart`:原生 WS 客户端,JPEG 帧 → `Image.memory`(gapless),点击/滚动映射回页面像素坐标,4004 → 无沙箱 |
+| `EmptyChatRoute` | 空会话直接发送首条消息，由后端按当前 workspace 自动解析/连接执行环境；不显示旧 Docker 时代的“创建沙箱”卡。无影未开通或通道未就绪时以 `DESKTOP_NOT_READY` 打开云桌面引导 |
 | Composer 的 ReasoningPicker(思考强度) | `utils/reasoning.dart`(纯函数 `resolveReasoning`,判定与 web hook 逐条一致)+ `picker_sheets.dart` 的 `showReasoningPicker`;只有声明了 variants 的模型才出这个胶囊。Dart 没有 `undefined`,所以用 `Variant?` 包装三态:**不传**=保留会话已存的强度,**`Variant(null)`**=显式清空回模型默认,**`Variant('high')`**=本轮用这一档 |
 | Composer 的 `/`、`@` 提及菜单 | `utils/mention.dart`(触发规则逐条移植)+ `mention_menu.dart`;文件搜索 160ms 防抖,技能/命令同款分组;资源段由 app 层经 `ComposerResourceSlot` 注入(特性之间不互相 import) |
 | 资源中心(`features/resources`,三栏) | `/app/resources`(`ResourcesScreen`):项目 chip + 来源 chip 折叠成两行筛选条,详情页 `ResourceDetailPage` 取代第三栏(图片/视频/音频/文本预览、改名/下载/删除);下载留在 App 内并调系统保存面板,长按出操作单,`+` 走 `file_picker` 直传 OSS |
