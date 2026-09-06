@@ -29,6 +29,7 @@ export interface PoolSummary {
   purchased_today: number
   enabled: boolean
   auto_purchase: boolean
+  auto_renew: boolean
   gates: {
     max_unit_price_cny: number
     max_per_tick: number

@@ -12,6 +12,7 @@ from core.config import get_config
 from core.identifier import ascending
 from core.log import create_logger
 from db.base import get_db_session
+from db.models.cloud_desktop import CloudDesktop
 from db.models.fleet import FleetAlert, PoolPurchase
 from db.repository.cloud_desktop_repo import cloud_desktop_repo
 from sandbox import wuying_ecd
@@ -40,6 +41,7 @@ CHANNEL_CLEAR_FIELDS = {
     "channel_error": None,
 }
 _ensure_lock = asyncio.Lock()
+_renew_lock = asyncio.Lock()
 
 
 class PoolStateError(RuntimeError):
@@ -379,6 +381,87 @@ class PoolService:
 
             await _clear_purchase_blocked()
             return {"status": "purchased", **plan, "created": created}
+
+    async def renew(
+        self,
+        desktop_id: str,
+        actor: str,
+        *,
+        approve: bool,
+    ) -> dict[str, Any]:
+        """Renew one eligible pooled desktop after explicit paid-operation approval."""
+        if not approve:
+            raise PaidOperationApprovalRequired("renew requires approve=true")
+        record = await cloud_desktop_repo.get_by_desktop_id(desktop_id)
+        if not record or record.get("pool_state") not in {"prewarm", "assigned"}:
+            raise PoolStateError("only prewarm or assigned desktops can be renewed")
+        if record.get("charge_type") != "PrePaid":
+            raise PoolStateError("only PrePaid desktops can be renewed")
+        config = get_config()
+        response = await wuying_ecd.renew_desktop(
+            desktop_id,
+            config.wuying_period,
+            config.wuying_period_unit,
+            auto_pay=True,
+            auto_renew=False,
+        )
+        refreshed = await wuying_ecd.describe_desktop(desktop_id)
+        expires_at = _expiry((refreshed or {}).get("expired_time"))
+        if expires_at is None:
+            raise PoolStateError(
+                f"desktop {desktop_id} renewed but its new expiry could not be read"
+            )
+        await cloud_desktop_repo.update(record["id"], expires_at=expires_at, error=None)
+        await _audit(actor, record.get("workspace_id"), "pool.renew", desktop_id, {
+            "order_id": response.get("order_id"),
+            "expires_at": expires_at.isoformat(),
+        })
+        result = await cloud_desktop_repo.get(record["id"])
+        if result is None:
+            raise PoolStateError("renewed DB record disappeared")
+        return result
+
+    async def renew_expiring(
+        self,
+        *,
+        dry_run: bool = False,
+        actor: str | None = None,
+    ) -> dict[str, Any]:
+        """Renew due capacity only when POOL_AUTO_RENEW is explicitly enabled."""
+        config = get_config()
+        if not config.pool_enabled:
+            return {"status": "disabled", "due": [], "renewed": []}
+        deadline = datetime.now(timezone.utc) + timedelta(
+            days=config.pool_renew_before_days
+        )
+        async with _renew_lock:
+            async with get_db_session() as session:
+                rows = (
+                    await session.execute(
+                        select(CloudDesktop).where(
+                            CloudDesktop.is_deleted.is_(False),
+                            CloudDesktop.pool_state.in_(("prewarm", "assigned")),
+                            CloudDesktop.charge_type == "PrePaid",
+                            CloudDesktop.expires_at.is_not(None),
+                            CloudDesktop.expires_at < deadline,
+                        ).order_by(CloudDesktop.expires_at, CloudDesktop.desktop_id)
+                    )
+                ).scalars().all()
+                due = [row.desktop_id for row in rows if row.desktop_id]
+            if not due:
+                return {"status": "satisfied", "due": [], "renewed": []}
+            if dry_run or not config.pool_auto_renew:
+                return {
+                    "status": "dry_run",
+                    "auto_renew": config.pool_auto_renew,
+                    "due": due,
+                    "renewed": [],
+                }
+            renewed = []
+            for desktop_id in due:
+                await self.renew(desktop_id, actor or "", approve=True)
+                renewed.append(desktop_id)
+            return {"status": "renewed", "due": due, "renewed": renewed}
 
     async def claim(
         self, workspace_id: str, triggered_by_user_id: str | None
@@ -762,3 +845,10 @@ async def run_ensure_prewarm_task() -> None:
     if get_config().sandbox_provider != "wuying":
         return
     await pool_service.ensure_prewarm(dry_run=False)
+
+
+async def run_renew_expiring_task() -> None:
+    """Daily adapter; POOL_AUTO_RENEW=false keeps this read-only."""
+    if get_config().sandbox_provider != "wuying":
+        return
+    await pool_service.renew_expiring(dry_run=False)

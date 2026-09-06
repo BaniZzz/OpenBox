@@ -225,6 +225,7 @@ def test_pool_configuration_defaults_are_safe():
     assert config.wuying_desktop_type == "eds.enterprise_office.6c12g"
     assert config.pool_enabled is False
     assert config.pool_auto_purchase is False
+    assert config.pool_auto_renew is False
     assert config.pool_target_prewarm == 5
     assert config.pool_max_purchases_per_tick == 1
     assert config.pool_max_purchases_per_day == 2

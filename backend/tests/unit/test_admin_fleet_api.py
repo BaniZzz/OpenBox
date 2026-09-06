@@ -98,3 +98,26 @@ async def test_admin_can_preview_pool_ensure(monkeypatch):
     )
     assert response.status_code == 200
     assert response.json()["quantity"] == 1
+
+
+async def test_admin_renew_forwards_explicit_approval(monkeypatch):
+    suffix = uuid.uuid4().hex[:10]
+    user = await PgUserRepo().create(
+        id=f"fleet-renew-{suffix}", username=f"fleet-renew-{suffix}",
+        password_hash="unused", role="admin",
+    )
+    from sandbox.pool import pool_service
+
+    async def renew(desktop_id, actor, *, approve):
+        assert desktop_id == "ecd-renew"
+        assert actor == user["id"]
+        assert approve is True
+        return {"desktop_id": desktop_id, "pool_state": "prewarm"}
+
+    monkeypatch.setattr(pool_service, "renew", renew)
+    response = await _request(
+        create_app(), {"user_id": user["id"], "role": "admin"},
+        "POST", "/api/admin/fleet/desktops/ecd-renew/renew", {"approve": True},
+    )
+    assert response.status_code == 200
+    assert response.json()["desktop_id"] == "ecd-renew"

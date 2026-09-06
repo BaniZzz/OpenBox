@@ -8,6 +8,8 @@
     "watermark": "{{current}} of {{target}} desktops ready",
     "autoOn": "Automatic purchasing enabled",
     "autoOff": "Automatic purchasing disabled",
+    "autoRenewOn": "Automatic renewal enabled",
+    "autoRenewOff": "Automatic renewal disabled",
     "gates": "Purchase gates: unit price ≤ ¥{{price}} · per tick ≤ {{tick}} · per day ≤ {{day}} · balance ≥ {{multiple}}× price",
     "dryRun": "Preview purchase",
     "ensure": "Ensure capacity",

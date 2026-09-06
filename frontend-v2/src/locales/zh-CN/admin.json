@@ -8,6 +8,8 @@
     "watermark": "当前 {{current}} / 目标 {{target}} 台",
     "autoOn": "自动采购已开启",
     "autoOff": "自动采购已关闭",
+    "autoRenewOn": "自动续期已开启",
+    "autoRenewOff": "自动续期已关闭",
     "gates": "采购闸：单价 ≤ ¥{{price}} · 每轮 ≤ {{tick}} · 每日 ≤ {{day}} · 余额 ≥ {{multiple}}×单价",
     "dryRun": "采购预检",
     "ensure": "补齐水位",

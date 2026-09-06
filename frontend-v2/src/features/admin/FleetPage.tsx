@@ -63,9 +63,14 @@ export function FleetPage() {
               })}
             </p>
           </div>
-          <span className="rounded-full bg-hairsoft px-3 py-1 text-xs text-n700">
-            {summary.auto_purchase ? t("pool.autoOn") : t("pool.autoOff")}
-          </span>
+          <div className="flex flex-wrap gap-2">
+            <span className="rounded-full bg-hairsoft px-3 py-1 text-xs text-n700">
+              {summary.auto_purchase ? t("pool.autoOn") : t("pool.autoOff")}
+            </span>
+            <span className="rounded-full bg-hairsoft px-3 py-1 text-xs text-n700">
+              {summary.auto_renew ? t("pool.autoRenewOn") : t("pool.autoRenewOff")}
+            </span>
+          </div>
         </div>
         <div className="mt-4 grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
           {Object.entries(summary.states).map(([state, count]) => (

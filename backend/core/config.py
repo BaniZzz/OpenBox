@@ -396,6 +396,7 @@ class OpenBoxConfig(BaseModel):
     pool_max_purchases_per_day: int = Field(default=2, ge=1, le=100)
     pool_min_account_balance_multiple: float = Field(default=2.0, ge=1, le=100)
     pool_renew_before_days: int = Field(default=3, ge=1, le=30)
+    pool_auto_renew: bool = False
     pool_assign_on_provision: bool = True
     pool_adopt_allowlist: str = ""
     fleet_snapshot_interval_sec: int = Field(default=600, ge=60, le=86400)
@@ -687,6 +688,7 @@ def _apply_env_overrides(data: dict) -> dict:
         "pool_max_purchases_per_day": "POOL_MAX_PURCHASES_PER_DAY",
         "pool_min_account_balance_multiple": "POOL_MIN_ACCOUNT_BALANCE_MULTIPLE",
         "pool_renew_before_days": "POOL_RENEW_BEFORE_DAYS",
+        "pool_auto_renew": "POOL_AUTO_RENEW",
         "pool_assign_on_provision": "POOL_ASSIGN_ON_PROVISION",
         "pool_adopt_allowlist": "POOL_ADOPT_ALLOWLIST",
         "fleet_snapshot_interval_sec": "FLEET_SNAPSHOT_INTERVAL_SEC",
@@ -747,7 +749,7 @@ def _apply_env_overrides(data: dict) -> dict:
                 data[field_name] = float(value)
             elif field_name in {"debug", "wuying_auto_pay", "wuying_auto_renew",
                                 "pool_enabled", "pool_auto_purchase",
-                                "pool_assign_on_provision"}:
+                                "pool_auto_renew", "pool_assign_on_provision"}:
                 data[field_name] = value.lower() == "true"
             else:
                 data[field_name] = value

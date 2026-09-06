@@ -15,6 +15,7 @@ from sandbox import pool as pool_module
 from sandbox.pool import (
     DestructiveApprovalRequired,
     LegacyGatewayReleaseRequired,
+    PaidOperationApprovalRequired,
     PoolService,
     PoolStateError,
     STABLE_STATES,
@@ -494,3 +495,65 @@ async def test_retired_desktop_cannot_be_recycled(monkeypatch):
     )
     with pytest.raises(PoolStateError, match="not recyclable"):
         await PoolService().recycle(record["desktop_id"], "admin", approve=True)
+
+
+async def test_renew_expiring_is_dry_run_until_auto_renew_enabled(monkeypatch):
+    desktop_id = f"ecd-renew-preview-{uuid.uuid4().hex[:8]}"
+    await _prewarm(desktop_id, expires_days=2)
+    monkeypatch.setattr(
+        pool_module, "get_config", lambda: _config(pool_auto_renew=False)
+    )
+
+    async def forbidden(*_args, **_kwargs):
+        raise AssertionError("renewal must not run while POOL_AUTO_RENEW=false")
+
+    monkeypatch.setattr(pool_module.wuying_ecd, "renew_desktop", forbidden)
+    result = await PoolService().renew_expiring(dry_run=False)
+    assert result["status"] == "dry_run"
+    assert desktop_id in result["due"]
+    assert result["renewed"] == []
+
+
+async def test_renew_expiring_renews_due_capacity_and_skips_retired(monkeypatch):
+    due_id = f"ecd-renew-due-{uuid.uuid4().hex[:8]}"
+    retired_id = f"ecd-renew-retired-{uuid.uuid4().hex[:8]}"
+    due = await _prewarm(due_id, expires_days=2)
+    await cloud_desktop_repo.create(
+        None,
+        "cn-shanghai",
+        status="running",
+        desktop_id=retired_id,
+        pool_state="retired",
+        expires_at=datetime.now(timezone.utc) + timedelta(days=2),
+        charge_type="PrePaid",
+    )
+    monkeypatch.setattr(
+        pool_module, "get_config", lambda: _config(pool_auto_renew=True)
+    )
+    calls = []
+    renewed_until = datetime.now(timezone.utc) + timedelta(days=32)
+
+    async def renew(desktop_id, *_args, **_kwargs):
+        calls.append(desktop_id)
+        return {"order_id": "order-1"}
+
+    async def describe(desktop_id):
+        return {"desktop_id": desktop_id, "expired_time": renewed_until.isoformat()}
+
+    monkeypatch.setattr(pool_module.wuying_ecd, "renew_desktop", renew)
+    monkeypatch.setattr(pool_module.wuying_ecd, "describe_desktop", describe)
+    result = await PoolService().renew_expiring(dry_run=False)
+    assert result["status"] == "renewed"
+    assert due_id in result["renewed"]
+    assert calls == result["renewed"]
+    assert retired_id not in result["due"]
+    refreshed = await cloud_desktop_repo.get(due["id"])
+    assert refreshed["expires_at"].replace(tzinfo=timezone.utc) == renewed_until
+
+
+async def test_manual_renew_requires_explicit_approval(monkeypatch):
+    desktop_id = f"ecd-renew-approval-{uuid.uuid4().hex[:8]}"
+    await _prewarm(desktop_id, expires_days=2)
+    monkeypatch.setattr(pool_module, "get_config", lambda: _config())
+    with pytest.raises(PaidOperationApprovalRequired, match="approve=true"):
+        await PoolService().renew(desktop_id, "admin", approve=False)
