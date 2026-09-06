@@ -277,8 +277,10 @@ def create_app() -> FastAPI:
 
     from api.workspaces import router as workspaces_router
     from api.admin import router as admin_router
+    from api.admin_fleet import router as admin_fleet_router
     application.include_router(workspaces_router)
     application.include_router(admin_router)
+    application.include_router(admin_fleet_router)
 
     from api.billing import router as billing_router
     application.include_router(billing_router)

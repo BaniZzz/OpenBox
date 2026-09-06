@@ -23,6 +23,7 @@ from db.models.image_gen_cache import ImageGenCache
 from db.models.workspace import Workspace, WorkspaceMember, WorkspaceInvitation
 from db.models.internal_task import InternalTaskState
 from db.models.billing import CreditBalance, CreditLedger, UsageEvent, PaymentOrder, PaymentOrderRequest, BillingSubscription
+from db.models.fleet import FleetAlert, FleetSnapshot, PoolPurchase
 import db.models.workspace_scope  # noqa: F401,E402
 
 __all__ = [
@@ -32,4 +33,5 @@ __all__ = [
     "UserSkill", "SkillInstall", "UserMemory", "ImageGenCache",
     "Workspace", "WorkspaceMember", "WorkspaceInvitation", "InternalTaskState",
     "CreditBalance", "CreditLedger", "UsageEvent", "PaymentOrder", "PaymentOrderRequest", "BillingSubscription",
+    "FleetAlert", "FleetSnapshot", "PoolPurchase",
 ]

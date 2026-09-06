@@ -41,28 +41,44 @@ def install_desktop_tools(d: Desktop) -> None:
     """Bake the fixed-display helpers that runtime lazy-install used to add."""
     print("[4/5] desktop tools")
     sys.path.insert(0, str(REPO / "backend"))
-    from sandbox.desktop import OBX_DISPLAY_SCRIPT, OBX_SHOT_SCRIPT, OBX_X_SCRIPT
+    from sandbox.desktop import (
+        OBX_DISPLAY_GUARD_SCRIPT,
+        OBX_DISPLAY_GUARD_UNIT,
+        OBX_DISPLAY_SCRIPT,
+        OBX_SHOT_SCRIPT,
+        OBX_X_SCRIPT,
+    )
 
     files = {
         "obx-x": OBX_X_SCRIPT,
         "obx-display": OBX_DISPLAY_SCRIPT,
         "obx-shot": OBX_SHOT_SCRIPT,
+        "obx-display-guard": OBX_DISPLAY_GUARD_SCRIPT,
     }
-    commands = [
+    d.run("\n".join([
         "set -eu",
         "export DEBIAN_FRONTEND=noninteractive",
         "apt-get update -qq",
         "apt-get install -y -qq --no-install-recommends xdotool scrot x11-utils python3-pil",
         "rm -rf /var/lib/apt/lists/*",
-    ]
+    ]), timeout=900)
     for name, body in files.items():
-        commands.extend(
-            [
-                f"printf '%s' '{base64.b64encode(body.encode()).decode()}' | base64 -d > /usr/local/bin/{name}",
-                f"chmod 755 /usr/local/bin/{name}",
-            ]
+        encoded = base64.b64encode(body.encode()).decode()
+        d.run(
+            f"printf '%s' '{encoded}' | base64 -d > /usr/local/bin/{name} && "
+            f"chmod 755 /usr/local/bin/{name}",
+            timeout=120,
         )
-    d.run("\n".join(commands), timeout=900)
+    encoded_unit = base64.b64encode(OBX_DISPLAY_GUARD_UNIT.encode()).decode()
+    d.run(
+        "\n".join([
+            f"printf '%s' '{encoded_unit}' | base64 -d > /etc/systemd/system/obx-display-guard.service",
+            "chmod 644 /etc/systemd/system/obx-display-guard.service",
+            "systemctl daemon-reload",
+            "systemctl enable --now obx-display-guard",
+        ]),
+        timeout=120,
+    )
 
 
 def install_image_services(d: Desktop) -> None:
@@ -71,6 +87,14 @@ def install_image_services(d: Desktop) -> None:
     d.run(r"""
 set -eu
 systemctl disable --now openbox-action-server openbox-tunnel 2>/dev/null || true
+# Image mode also supports recycling an idle validation desktop. Remove all
+# workspace and user-installed runtime state before snapshotting so acceptance
+# artifacts cannot leak into every clone. The action server recreates the
+# /workspace/skills convenience symlink when a newly provisioned clone starts.
+find /workspace -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+find /data -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+install -d -m 755 /workspace /data/skills /data/mcp/logs
+rm -f /root/.bash_history /root/.python_history
 rm -rf /root/.ssh
 # Machine host keys identify the source desktop and must not be cloned. Ubuntu
 # cloud-init/ssh-keygen regenerates them for a new instance when sshd is used;
@@ -253,7 +277,16 @@ echo "python $(python3 -V 2>&1 | cut -d' ' -f2)  ffmpeg $(ffmpeg -version | head
 def install_action_server(d: Desktop) -> None:
     print("[2/5] action server")
     d.put(REPO / "container" / "action_server.py", "/opt/action_server/action_server.py")
-    for local_path in sorted(path for path in VIDEO_PRODUCTION_SKILL_DIR.rglob("*") if path.is_file()):
+    d.run(
+        "rm -rf /opt/openbox/skills/video-production && "
+        "mkdir -p /opt/openbox/skills/video-production",
+        timeout=120,
+    )
+    for local_path in sorted(
+        path
+        for path in VIDEO_PRODUCTION_SKILL_DIR.rglob("*")
+        if path.is_file() and "__pycache__" not in path.parts and path.suffix != ".pyc"
+    ):
         relative = local_path.relative_to(VIDEO_PRODUCTION_SKILL_DIR)
         d.put(local_path, str(pathlib.PurePosixPath("/opt/openbox/skills/video-production") / relative))
     d.run(r"""

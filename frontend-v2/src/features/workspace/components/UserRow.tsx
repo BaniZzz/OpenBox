@@ -34,6 +34,16 @@ export function UserRow({ sessionCount }: { sessionCount: number }) {
         >
           {t("settings")}
         </MenuItem>
+        {user?.role === "admin" && (
+          <MenuItem
+            onClick={() => {
+              setMenuOpen(false)
+              navigate(paths.adminFleet)
+            }}
+          >
+            {t("adminFleet")}
+          </MenuItem>
+        )}
         <MenuItem onClick={() => void signOut()}>{t("common:action.signOut", { ns: "common" })}</MenuItem>
       </Menu>
       <div className="hover:bg-n200 flex items-center gap-2.5 rounded-full px-2.5 py-2">
