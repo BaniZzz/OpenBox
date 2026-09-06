@@ -9,7 +9,7 @@ export function SettingsNav({ active }: { active: SettingsTab }) {
   const { t } = useTranslation("settings")
   const navigate = useNavigate()
   return (
-    <div className="flex w-44 flex-none flex-col gap-0.5">
+    <div className="flex w-full flex-none flex-wrap gap-0.5 @min-[640px]/settings:w-44 @min-[640px]/settings:flex-col">
       {SETTINGS_TABS.map((tab) => (
         <button
           key={tab}
@@ -17,7 +17,7 @@ export function SettingsNav({ active }: { active: SettingsTab }) {
           onClick={() => navigate(paths.settings(tab))}
           className={cn(
             "flex min-h-9 items-center rounded-full px-3.5 text-start text-sm",
-            active === tab ? "bg-n300 font-medium text-ink" : "text-n800 hover:bg-hairsoft",
+            active === tab ? "bg-n300 text-ink font-medium" : "text-n800 hover:bg-hairsoft",
           )}
         >
           {t(`nav.${tab}`)}

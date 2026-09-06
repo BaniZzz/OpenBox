@@ -1,11 +1,11 @@
 import { useTranslation } from "react-i18next"
-import { useParams } from "react-router"
+import { Navigate, useParams } from "react-router"
+import { paths } from "@/shared/router/paths"
 import {
   SettingsNav,
   SETTINGS_TABS,
   type SettingsTab,
   AccountPage,
-  UsagePage,
   ModelsPage,
   BrowserPage,
   AppearancePage,
@@ -16,8 +16,6 @@ function ActivePage({ tab }: { tab: SettingsTab }) {
   switch (tab) {
     case "team":
       return <TeamPage />
-    case "usage":
-      return <UsagePage />
     case "models":
       return <ModelsPage />
     case "browser":
@@ -32,16 +30,17 @@ function ActivePage({ tab }: { tab: SettingsTab }) {
 export default function SettingsRoute() {
   const { t } = useTranslation("settings")
   const { tab } = useParams()
+  if (tab === "usage") return <Navigate to={paths.billing("usage")} replace />
   const active: SettingsTab = SETTINGS_TABS.includes(tab as SettingsTab) ? (tab as SettingsTab) : "account"
 
   return (
-    <div className="scr min-h-0 flex-1 overflow-auto px-6.5 pt-1.5 pb-7">
-      <div className="mx-auto flex w-full max-w-[860px] items-start gap-7">
+    <div className="scr @container/settings min-h-0 flex-1 overflow-auto px-4 pt-1.5 pb-7">
+      <div className="mx-auto flex w-full max-w-[860px] flex-col items-stretch gap-5 @min-[640px]/settings:flex-row @min-[640px]/settings:items-start @min-[640px]/settings:gap-7">
         <SettingsNav active={active} />
         <div className="flex min-w-0 flex-1 flex-col gap-4.5">
           <div className="flex flex-col gap-1">
             <span className="text-2xl font-medium tracking-tight">{t(`nav.${active}`)}</span>
-            <span className="text-sm text-n600">{t(`hint.${active}`)}</span>
+            <span className="text-n600 text-sm">{t(`hint.${active}`)}</span>
           </div>
           <ActivePage tab={active} />
         </div>

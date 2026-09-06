@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 import sqlalchemy as sa
 
-from db.base import _missing_readiness_schema
+from db.base import _missing_readiness_schema, _upgrade_desktop_billing_columns
 
 
 _INTERNAL_PART_COLUMNS = (
@@ -39,6 +39,9 @@ _CLOUD_DESKTOP_COLUMNS = (
 
 
 def _create_current_schema(connection, *, missing_internal_column: str | None = None):
+    from db.models.billing import BillingSubscription, CreditBalance, CreditLedger, PaymentOrder, PaymentOrderRequest, UsageEvent
+    for model in (CreditBalance, CreditLedger, PaymentOrder, UsageEvent, BillingSubscription, PaymentOrderRequest):
+        model.__table__.create(connection)
     connection.exec_driver_sql(
         "CREATE TABLE sessions (id VARCHAR PRIMARY KEY, tool_exposure_state TEXT)"
     )
@@ -96,4 +99,27 @@ def test_readiness_accepts_the_complete_current_schema():
     with engine.begin() as connection:
         _create_current_schema(connection)
         assert _missing_readiness_schema(connection) == ()
+    engine.dispose()
+
+
+@pytest.mark.parametrize("table", ["credit_balances", "usage_events", "credit_ledger", "payment_orders", "billing_subscriptions", "payment_order_requests"])
+def test_readiness_rejects_missing_billing_migration(table):
+    engine = sa.create_engine("sqlite:///:memory:")
+    with engine.begin() as connection:
+        _create_current_schema(connection)
+        connection.exec_driver_sql(f"DROP TABLE {table}")
+        assert _missing_readiness_schema(connection) == (table,)
+    engine.dispose()
+
+
+def test_desktop_upgrade_preserves_old_orders_and_is_repeatable():
+    engine = sa.create_engine("sqlite:///:memory:")
+    with engine.begin() as connection:
+        connection.exec_driver_sql("CREATE TABLE payment_orders (id TEXT PRIMARY KEY, credits NUMERIC)")
+        connection.exec_driver_sql("INSERT INTO payment_orders (id, credits) VALUES ('existing', 25)")
+        _upgrade_desktop_billing_columns(connection)
+        _upgrade_desktop_billing_columns(connection)
+        assert connection.exec_driver_sql("SELECT id, credits, kind, product FROM payment_orders").one() == (
+            "existing", 25, "topup", None,
+        )
     engine.dispose()

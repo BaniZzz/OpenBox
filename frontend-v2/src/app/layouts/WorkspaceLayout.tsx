@@ -1,5 +1,5 @@
 import { Suspense, useEffect } from "react"
-import { Outlet, useParams } from "react-router"
+import { Outlet, useMatch, useParams } from "react-router"
 import { Sidebar, Topbar, useWorkspaceEvents } from "@/features/workspace"
 import { WorkbenchPanel, usePanelStore, usePanelEvents } from "@/features/workbench"
 import { CronPanelTab, CronStatusPill } from "@/features/cron"
@@ -9,6 +9,8 @@ import { useAppearanceStore } from "@/shared/appearance/store"
 import { http } from "@/shared/api/http"
 import type { UserPreferences } from "@/shared/types/api"
 import { useWorkspacesQuery } from "@/shared/api/workspaces"
+import { cn } from "@/shared/lib/cn"
+import { paths } from "@/shared/router/paths"
 
 export default function WorkspaceLayout() {
   useWorkspaceEvents()
@@ -18,6 +20,8 @@ export default function WorkspaceLayout() {
   const togglePanel = usePanelStore((s) => s.togglePanel)
   const userId = useAuthStore((s) => s.user?.id)
   const workspaces = useWorkspacesQuery()
+  const isSettings = useMatch(`${paths.settings()}/*`) !== null
+  const isBilling = useMatch(`${paths.billing()}/*`) !== null
 
   // Hydrate appearance from server prefs once per signed-in user.
   useEffect(() => {
@@ -31,16 +35,21 @@ export default function WorkspaceLayout() {
   if (workspaces.error) throw workspaces.error
   if (!workspaces.data) {
     return (
-      <div className="flex h-screen items-center justify-center bg-bg">
+      <div className="bg-bg flex h-screen items-center justify-center">
         <Spinner className="size-6" />
       </div>
     )
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-bg text-ink">
+    <div className="bg-bg text-ink flex h-screen overflow-hidden">
       <Sidebar />
-      <main className="flex min-h-0 min-w-105 flex-1 flex-col overflow-hidden">
+      <main
+        className={cn(
+          "flex min-h-0 flex-1 flex-col overflow-hidden",
+          isSettings || isBilling ? "min-w-0" : "min-w-105",
+        )}
+      >
         <Topbar
           panelOpen={panelOpen}
           onTogglePanel={togglePanel}
@@ -61,12 +70,14 @@ export default function WorkspaceLayout() {
       {/* Own boundary: the panel loads its i18n namespace on first open, and
           without this that suspension escapes to the router boundary and blanks
           the whole workspace. */}
-      <Suspense fallback={null}>
-        <WorkbenchPanel
-          sessionId={sessionId ?? null}
-          cronTab={<CronPanelTab sessionId={sessionId ?? null} />}
-        />
-      </Suspense>
+      {!isBilling && (
+        <Suspense fallback={null}>
+          <WorkbenchPanel
+            sessionId={sessionId ?? null}
+            cronTab={<CronPanelTab sessionId={sessionId ?? null} />}
+          />
+        </Suspense>
+      )}
     </div>
   )
 }

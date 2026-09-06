@@ -34,6 +34,8 @@ dependencies = [
     # Multi-user: Auth
     "passlib[bcrypt]>=1.7.4",
     "python-jose[cryptography]>=3.3.0",
+    # Native Alipay RSA2 signing and verification.
+    "cryptography>=44.0.0",
     "croniter>=6.0.0",
     # GKE sandbox + backup
     "kubernetes>=29.0.0",
@@ -61,7 +63,7 @@ packages = [
     "agent", "api", "blob", "bus", "command", "core", "mcp",
     "models", "permission", "project", "question", "sandbox",
     "session", "skill", "snapshot", "storage", "tool",
-    "db", "cache", "auth", "video",
+    "db", "cache", "auth", "video", "billing",
 ]
 
 [tool.pytest.ini_options]

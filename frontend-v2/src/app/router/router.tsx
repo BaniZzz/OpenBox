@@ -12,6 +12,7 @@ const WorkspaceLayout = lazy(() => import("@/app/layouts/WorkspaceLayout"))
 const EmptyChatRoute = lazy(() => import("@/routes/workspace/EmptyChatRoute"))
 const ChatRoute = lazy(() => import("@/routes/workspace/ChatRoute"))
 const SettingsRoute = lazy(() => import("@/routes/settings/SettingsRoute"))
+const BillingRoute = lazy(() => import("@/routes/billing/BillingRoute"))
 const CronRoute = lazy(() => import("@/routes/cron/CronRoute"))
 const ResourcesRoute = lazy(() => import("@/routes/resources/ResourcesRoute"))
 const SkillsRoute = lazy(() => import("@/routes/skills/SkillsRoute"))
@@ -59,6 +60,7 @@ export const router = createBrowserRouter([
           { index: true, element: <EmptyChatRoute /> },
           { path: routePatterns.chat, element: <ChatRoute /> },
           { path: routePatterns.settings, element: <SettingsRoute /> },
+          { path: routePatterns.billing, element: <BillingRoute /> },
           { path: routePatterns.cron, element: <CronRoute /> },
           { path: routePatterns.resources, element: <ResourcesRoute /> },
           { path: routePatterns.skills, element: <SkillsRoute /> },

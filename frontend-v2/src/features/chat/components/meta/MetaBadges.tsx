@@ -1,18 +1,11 @@
 // The data badges that sit above an assistant turn's action row, plus the
 // shared timestamp label. All colours/sizes are token-driven (design appendix D).
 import type { ReactNode } from "react"
-import {
-  ArrowDownToLine,
-  ArrowUpFromLine,
-  CircleDollarSign,
-  ClockArrowUp,
-  ClockCheck,
-  Database,
-} from "lucide-react"
+import { ArrowDownToLine, ArrowUpFromLine, Coins, ClockArrowUp, ClockCheck, Database } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { useLiveElapsed } from "@/shared/hooks/useLiveElapsed"
 import { cn } from "@/shared/lib/cn"
-import { formatCost, formatDuration, formatNumber } from "@/shared/lib/format"
+import { formatCredits, formatDuration, formatNumber } from "@/shared/lib/format"
 import { Tooltip } from "@/shared/ui/Tooltip"
 import type { TokenUsage } from "@/shared/types/api"
 import { useConfigQuery } from "../../api/config"
@@ -59,7 +52,7 @@ export function TokenBadge({ tokens }: { tokens: TokenUsage }) {
   const input = tokens.input ?? 0
   const output = tokens.output ?? 0
   const cache = tokens.cache ?? 0
-  const cost = tokens.cost ?? 0
+  const credits = tokens.credits
   if (input <= 0 && output <= 0 && cache <= 0) return null
   return (
     <span className={BADGE}>
@@ -84,11 +77,11 @@ export function TokenBadge({ tokens }: { tokens: TokenUsage }) {
           icon={<Database className="size-3" strokeWidth={1.4} />}
         />
       )}
-      {cost > 0 && (
+      {credits != null && Number(credits) > 0 && (
         <TokenMetric
           label={t("meta.cost")}
-          value={formatCost(cost)}
-          icon={<CircleDollarSign className="size-3" strokeWidth={1.4} />}
+          value={formatCredits(credits)}
+          icon={<Coins className="size-3" strokeWidth={1.4} />}
         />
       )}
     </span>
@@ -137,7 +130,11 @@ function useTimestamp(iso: string): TimestampParts | null {
   const now = new Date()
   const isToday = date.toDateString() === now.toDateString()
   const time = new Intl.DateTimeFormat(i18n.language, { hour: "2-digit", minute: "2-digit" }).format(date)
-  const day = new Intl.DateTimeFormat(i18n.language, { year: "numeric", month: "short", day: "numeric" }).format(date)
+  const day = new Intl.DateTimeFormat(i18n.language, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  }).format(date)
   const title = t("time.fullDateTime", { date: day, time })
   return { label: isToday ? t("time.todayTime", { time }) : title, title }
 }

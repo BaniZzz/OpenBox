@@ -2,7 +2,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { http } from "@/shared/api/http"
 import { useAuthStore } from "@/shared/api/auth-store"
-import type { Session, UserPreferences } from "@/shared/types/api"
+import type { UserPreferences } from "@/shared/types/api"
 import { settingsKeys } from "./keys"
 
 export interface ConfigModel {
@@ -91,14 +91,5 @@ export function useUpdatePreferences() {
     mutationFn: (patch: Partial<Pick<UserPreferences, "default_model" | "default_agent">>) =>
       http.put<UserPreferences>("/api/auth/me/preferences", patch),
     onSuccess: () => void qc.invalidateQueries({ queryKey: settingsKeys.prefs(userId) }),
-  })
-}
-
-export function useUsageSessions() {
-  const userId = useUserId()
-  return useQuery({
-    queryKey: settingsKeys.sessions(userId),
-    queryFn: () => http.get<Session[]>("/api/agent/session"),
-    staleTime: 30_000,
   })
 }

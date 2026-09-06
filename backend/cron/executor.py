@@ -332,6 +332,7 @@ async def _generate_summary(messages, job: dict) -> str:
             tools={},
             model_id=model_id,
             ctx=ctx,
+            billing_kind="cron_summary",
         ):
             if event["type"] == "text_delta":
                 summary += event["text"]

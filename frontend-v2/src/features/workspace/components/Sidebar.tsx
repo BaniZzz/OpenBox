@@ -1,7 +1,8 @@
 import { useMemo, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
-import { useNavigate } from "react-router"
-import { Blocks, Clock, Layers, PanelLeft, Plus, Search } from "lucide-react"
+import { useMatch, useNavigate } from "react-router"
+import { Blocks, Clock, CreditCard, Layers, PanelLeft, Plus, Search } from "lucide-react"
+import { cn } from "@/shared/lib/cn"
 import { BrandMark } from "@/shared/ui/BrandMark"
 import { paths } from "@/shared/router/paths"
 import { useProjectsQuery, useCreateProject } from "../api/projects"
@@ -14,6 +15,7 @@ import { WorkspaceSwitcher } from "./WorkspaceSwitcher"
 export function Sidebar() {
   const { t } = useTranslation("workspace")
   const navigate = useNavigate()
+  const isBilling = useMatch(`${paths.billing()}/*`) !== null
   const width = useWorkspaceUi((s) => s.sidebarWidth)
   const collapsed = useWorkspaceUi((s) => s.sidebarCollapsed)
   const toggleSidebar = useWorkspaceUi((s) => s.toggleSidebar)
@@ -26,9 +28,7 @@ export function Sidebar() {
   // A stale selection (deleted project) must not point the resource centre
   // at a project that no longer exists.
   const activeProject =
-    selectedProject && (projects.data ?? []).some((p) => p.id === selectedProject)
-      ? selectedProject
-      : null
+    selectedProject && (projects.data ?? []).some((p) => p.id === selectedProject) ? selectedProject : null
 
   const [draftOpen, setDraftOpen] = useState(false)
   const [draftName, setDraftName] = useState("")
@@ -70,7 +70,7 @@ export function Sidebar() {
 
   return (
     <aside
-      className="relative flex min-h-0 flex-none flex-col border-e border-hair bg-rail"
+      className="border-hair bg-rail relative flex min-h-0 flex-none flex-col border-e"
       style={{ width }}
     >
       <div className="flex min-h-0 flex-1 flex-col ps-4.5 pe-3 pt-3.5 pb-2.5">
@@ -78,7 +78,7 @@ export function Sidebar() {
           <BrandMark className="min-w-0 flex-1" />
           <button
             type="button"
-            className="flex size-7.5 flex-none items-center justify-center rounded-full text-n700 hover:bg-hairsoft"
+            className="text-n700 hover:bg-hairsoft flex size-7.5 flex-none items-center justify-center rounded-full"
             onClick={toggleSidebar}
             title={t("collapse")}
             aria-label={t("collapse")}
@@ -96,15 +96,15 @@ export function Sidebar() {
           // The sidebar's primary action opens a project draft; chats are
           // started inside a project from its own row.
           onClick={() => setDraftOpen(true)}
-          className="group flex h-10 flex-none items-center gap-2.5 rounded-full px-1.5 text-base font-medium text-ink hover:bg-hairsoft"
+          className="group text-ink hover:bg-hairsoft flex h-10 flex-none items-center gap-2.5 rounded-full px-1.5 text-base font-medium"
         >
-          <span className="flex size-7 flex-none items-center justify-center rounded-full bg-n200 transition-transform duration-150 group-hover:scale-105">
+          <span className="bg-n200 flex size-7 flex-none items-center justify-center rounded-full transition-transform duration-150 group-hover:scale-105">
             <Plus size={15} strokeWidth={2.5} />
           </span>
           {t("newProject")}
         </button>
 
-        <div className="flex h-10 flex-none items-center gap-2.5 rounded-full px-1.5 focus-within:bg-hairsoft hover:bg-hairsoft">
+        <div className="focus-within:bg-hairsoft hover:bg-hairsoft flex h-10 flex-none items-center gap-2.5 rounded-full px-1.5">
           <span className="flex size-7 flex-none items-center justify-center">
             <Search size={16} strokeWidth={2.1} className="text-ink" aria-hidden />
           </span>
@@ -112,7 +112,7 @@ export function Sidebar() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={t("search")}
-            className="min-w-0 flex-1 bg-transparent pe-2 text-base text-ink outline-none placeholder:text-n600"
+            className="text-ink placeholder:text-n600 min-w-0 flex-1 bg-transparent pe-2 text-base outline-none"
           />
         </div>
 
@@ -121,7 +121,7 @@ export function Sidebar() {
           // Opens on the project in view, which is the one whose files the
           // person was just looking at.
           onClick={() => navigate(paths.resources(activeProject ?? undefined))}
-          className="mt-2.5 flex h-10 flex-none items-center gap-2.5 rounded-full px-1.5 text-base text-ink hover:bg-hairsoft"
+          className="text-ink hover:bg-hairsoft mt-2.5 flex h-10 flex-none items-center gap-2.5 rounded-full px-1.5 text-base"
         >
           <span className="flex size-7 flex-none items-center justify-center">
             <Layers size={16} strokeWidth={2.1} />
@@ -132,7 +132,7 @@ export function Sidebar() {
         <button
           type="button"
           onClick={() => navigate(paths.skills)}
-          className="flex h-10 flex-none items-center gap-2.5 rounded-full px-1.5 text-base text-ink hover:bg-hairsoft"
+          className="text-ink hover:bg-hairsoft flex h-10 flex-none items-center gap-2.5 rounded-full px-1.5 text-base"
         >
           <span className="flex size-7 flex-none items-center justify-center">
             <Blocks size={16} strokeWidth={2.1} />
@@ -143,7 +143,7 @@ export function Sidebar() {
         <button
           type="button"
           onClick={() => navigate(paths.cron)}
-          className="mb-1.5 flex h-10 flex-none items-center gap-2.5 rounded-full px-1.5 text-base text-ink hover:bg-hairsoft"
+          className="text-ink hover:bg-hairsoft mb-1.5 flex h-10 flex-none items-center gap-2.5 rounded-full px-1.5 text-base"
         >
           <span className="flex size-7 flex-none items-center justify-center">
             <Clock size={16} strokeWidth={2.1} />
@@ -151,9 +151,24 @@ export function Sidebar() {
           {t("scheduledTasks")}
         </button>
 
+        <button
+          type="button"
+          onClick={() => navigate(paths.billing())}
+          aria-current={isBilling ? "page" : undefined}
+          className={cn(
+            "text-ink hover:bg-hairsoft mb-1.5 flex h-10 flex-none items-center gap-2.5 rounded-full px-1.5 text-base",
+            isBilling && "bg-n200 font-medium",
+          )}
+        >
+          <span className="flex size-7 flex-none items-center justify-center">
+            <CreditCard size={16} strokeWidth={2.1} />
+          </span>
+          {t("billing")}
+        </button>
+
         {draftOpen && (
-          <div className="mb-1 flex flex-none items-center gap-2 rounded-full border border-hair px-3.5 py-2">
-            <span className="size-1.75 rounded-full bg-accent" aria-hidden />
+          <div className="border-hair mb-1 flex flex-none items-center gap-2 rounded-full border px-3.5 py-2">
+            <span className="bg-accent size-1.75 rounded-full" aria-hidden />
             <input
               value={draftName}
               onChange={(e) => setDraftName(e.target.value)}
@@ -163,7 +178,7 @@ export function Sidebar() {
               }}
               onBlur={commitDraft}
               placeholder={t("projectName")}
-              className="min-w-0 flex-1 border-none bg-transparent text-base text-ink outline-none"
+              className="text-ink min-w-0 flex-1 border-none bg-transparent text-base outline-none"
               // eslint-disable-next-line jsx-a11y/no-autofocus
               autoFocus
             />
@@ -171,7 +186,11 @@ export function Sidebar() {
         )}
 
         <div className="scr -mx-1 flex min-h-0 flex-1 flex-col gap-0.5 overflow-x-hidden overflow-y-auto p-1">
-          <ProjectTree projects={projects.data ?? []} sessions={filtered} searching={query.trim().length > 0} />
+          <ProjectTree
+            projects={projects.data ?? []}
+            sessions={filtered}
+            searching={query.trim().length > 0}
+          />
         </div>
 
         <UserRow sessionCount={(sessions.data ?? []).length} />
@@ -181,7 +200,7 @@ export function Sidebar() {
         aria-hidden
         tabIndex={-1}
         onMouseDown={startDrag}
-        className="absolute top-0 bottom-0 -end-1 z-6 w-2 cursor-col-resize"
+        className="absolute -end-1 top-0 bottom-0 z-6 w-2 cursor-col-resize"
       />
     </aside>
   )

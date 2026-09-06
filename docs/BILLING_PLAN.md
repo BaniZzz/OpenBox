@@ -1,5 +1,7 @@
 # OpenBox 计费方案
 
+> 2026-09-05 更新：Token 积分计费与支付适配已实现，当前规则为 **1 元 = 1 积分**。实施口径、价格来源、支付合同及模式开关见 [CREDIT_BILLING.md](CREDIT_BILLING.md)。下文保留为历史设计，其换算比例不再适用。
+
 > 状态：设计稿 v1（2026-09-02），待评审后进入实施。<br>
 > 参照实现：bossip `apps/center/src/billing/`（套餐目录、用量计量、对账）与
 > `admin-v2/model-gateway-admin.service.ts`（new-api 管理 API 封装）。<br>

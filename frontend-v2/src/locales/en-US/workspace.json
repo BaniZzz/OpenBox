@@ -75,5 +75,9 @@
   "filter": {
     "chats": "Conversations",
     "cron": "Scheduled runs"
-  }
+  },
+  "viewCredits": "View credits and usage",
+  "creditsUnavailable": "Credits unavailable",
+  "creditBalance": "{{value}} credits remaining",
+  "billing": "Billing"
 }

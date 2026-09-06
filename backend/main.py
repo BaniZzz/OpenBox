@@ -280,6 +280,9 @@ def create_app() -> FastAPI:
     application.include_router(workspaces_router)
     application.include_router(admin_router)
 
+    from api.billing import router as billing_router
+    application.include_router(billing_router)
+
     # ── Agent routes ──
     agent_router = APIRouter(prefix="/api/agent", tags=["Agent"])
 

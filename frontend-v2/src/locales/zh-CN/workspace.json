@@ -75,5 +75,9 @@
   "filter": {
     "chats": "会话",
     "cron": "定时运行"
-  }
+  },
+  "viewCredits": "查看积分与消耗",
+  "creditsUnavailable": "积分暂不可用",
+  "creditBalance": "剩余 {{value}} 积分",
+  "billing": "订购"
 }

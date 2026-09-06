@@ -1174,6 +1174,7 @@ async def run_loop(session_id: str, user_id: str = "default") -> MessageWithPart
                 input_tokens=total_usage.get("input", 0),
                 output_tokens=total_usage.get("output", 0),
                 cost=total_usage.get("cost", 0.0),
+                credits=total_usage.get("credits"),
                 duration=step_duration,
                 session_id=session_id,
                 message_id=assistant_info.id,
@@ -1233,6 +1234,7 @@ async def run_loop(session_id: str, user_id: str = "default") -> MessageWithPart
                 cache=total_usage.get("cache", 0),
                 total=total_usage.get("total", 0),
                 cost=total_usage.get("cost", 0.0),
+                credits=total_usage.get("credits"),
             )
             assistant_info.tokens = last_finished_tokens
             await update_message_info(assistant_info, user_id=user_id)
@@ -2320,7 +2322,7 @@ async def _ensure_title(session_id: str, user_msg: MessageWithParts, user_id: st
 
         # Try LLM-based title generation
         try:
-            title = await _generate_title_with_llm(text)
+            title = await _generate_title_with_llm(text, session_id=session_id, user_id=user_id)
         except Exception as e:
             log.debug(f"LLM title generation failed, using truncation: {e}")
             title = None
@@ -2336,7 +2338,7 @@ async def _ensure_title(session_id: str, user_msg: MessageWithParts, user_id: st
         log.warning(f"Failed to generate title: {e}")
 
 
-async def _generate_title_with_llm(user_text: str) -> str | None:
+async def _generate_title_with_llm(user_text: str, session_id: str = "", user_id: str = "") -> str | None:
     """Use mcp_filter_model (cheap/fast) to generate a session title.
 
     Uses the same model configured for MCP tool filtering to save costs.
@@ -2345,7 +2347,8 @@ async def _generate_title_with_llm(user_text: str) -> str | None:
     try:
         import litellm
         litellm.drop_params = True
-        from agent.llm import _get_provider_kwargs
+        from agent.llm import _get_provider_kwargs, metered_completion
+        from tool.tool import ToolContext
         from core.config import get_config
 
         config = get_config()
@@ -2353,7 +2356,8 @@ async def _generate_title_with_llm(user_text: str) -> str | None:
         model_id = config.mcp_filter_model or config.model or "openai/gpt-4o-mini"
         provider_kwargs = _get_provider_kwargs(model_id)
 
-        response = await litellm.acompletion(
+        response = await metered_completion(
+            ctx=ToolContext(session_id=session_id, user_id=user_id), billing_kind="title",
             model=model_id,
             messages=[
                 {"role": "user", "content": (
