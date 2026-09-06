@@ -10,6 +10,13 @@ from db.base import get_db_session
 from db.models.internal_task import InternalTaskState
 
 
+def test_builtin_fleet_tasks_run_snapshot_before_pool_ensure(monkeypatch):
+    monkeypatch.setattr(internal_tasks, "_tasks", {})
+    internal_tasks.register_builtin_tasks()
+    names = list(internal_tasks._tasks)
+    assert names.index("fleet_snapshot") < names.index("ensure_prewarm")
+
+
 async def test_concurrent_ticks_claim_one_execution(monkeypatch):
     monkeypatch.setattr(internal_tasks, "_tasks", {})
     calls = 0

@@ -4,14 +4,18 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from sqlalchemy import delete, select
 
 from core.config import OpenBoxConfig
+from db.base import get_db_session
+from db.models.fleet import FleetAlert, PoolPurchase
 from db.repository.cloud_desktop_repo import cloud_desktop_repo
 from db.repository.user_repo import PgUserRepo
 from sandbox import pool as pool_module
 from sandbox.pool import (
     DestructiveApprovalRequired,
     LegacyGatewayReleaseRequired,
+    PaidOperationApprovalRequired,
     PoolService,
     PoolStateError,
     STABLE_STATES,
@@ -77,6 +81,174 @@ def test_state_model_is_six_stable_plus_one_transient():
         "reserve", "prewarm", "assigned", "released", "recycling", "retired",
     }
     assert TRANSIENT_STATES == {"assigning"}
+
+
+async def test_ensure_prewarm_disabled_never_calls_cloud(monkeypatch):
+    monkeypatch.setattr(pool_module, "get_config", lambda: _config(pool_enabled=False))
+
+    async def forbidden():
+        raise AssertionError("disabled pool must not call ECD")
+
+    monkeypatch.setattr(pool_module.wuying_ecd, "list_fleet_desktops", forbidden)
+    result = await PoolService().ensure_prewarm(dry_run=False)
+    assert result == {
+        "status": "disabled", "current": 0, "target": 5, "gap": 5, "quantity": 0,
+    }
+
+
+async def test_ensure_prewarm_dry_run_applies_tick_limit_without_purchase(monkeypatch):
+    monkeypatch.setattr(
+        pool_module,
+        "get_config",
+        lambda: _config(pool_target_prewarm=5, pool_auto_purchase=False),
+    )
+
+    async def desktops():
+        return [
+            {"status": "Running", "tags": {"openbox-pool": "prewarm"}},
+            {"status": "Stopped", "tags": {"openbox-pool": "prewarm"}},
+            {"status": "Running", "tags": {"openbox-pool": "prewarm"}},
+            {"status": "Expired", "tags": {"openbox-pool": "prewarm"}},
+            {"status": "Running", "tags": {"openbox-pool": "assigned"}},
+        ]
+
+    async def price(*_args, **_kwargs):
+        return {"trade_price": 200, "currency": "CNY"}
+
+    async def balance():
+        return {"available_balance": 1000, "currency": "CNY"}
+
+    async def forbidden():
+        raise AssertionError("automatic purchase is disabled")
+
+    monkeypatch.setattr(pool_module.wuying_ecd, "list_fleet_desktops", desktops)
+    monkeypatch.setattr(pool_module.wuying_ecd, "describe_price", price)
+    monkeypatch.setattr(pool_module.wuying_ecd, "query_account_balance", balance)
+    monkeypatch.setattr(pool_module.wuying_ecd, "create_desktop_for_pool", forbidden)
+
+    result = await PoolService().ensure_prewarm(dry_run=False)
+    assert result["status"] == "dry_run"
+    assert result["current"] == 3
+    assert result["gap"] == 2
+    assert result["quantity"] == 1
+    assert result["unit_price"] == 200
+
+
+async def test_ensure_prewarm_blocks_price_gate_and_opens_alert(monkeypatch):
+    async with get_db_session() as session:
+        await session.execute(delete(FleetAlert))
+    monkeypatch.setattr(
+        pool_module,
+        "get_config",
+        lambda: _config(pool_target_prewarm=1, pool_max_unit_price_cny=100),
+    )
+
+    async def desktops():
+        return []
+
+    async def price(*_args, **_kwargs):
+        return {"trade_price": 105.75, "currency": "CNY"}
+
+    monkeypatch.setattr(pool_module.wuying_ecd, "list_fleet_desktops", desktops)
+    monkeypatch.setattr(pool_module.wuying_ecd, "describe_price", price)
+    result = await PoolService().ensure_prewarm(dry_run=True)
+    assert result["status"] == "blocked"
+    assert result["gate"] == "unit_price"
+    async with get_db_session() as session:
+        alert = await session.scalar(select(FleetAlert).where(
+            FleetAlert.rule == "purchase_blocked",
+            FleetAlert.resolved_at.is_(None),
+        ))
+    assert alert is not None
+    assert alert.detail["gate"] == "unit_price"
+
+
+async def test_ensure_prewarm_blocks_daily_limit(monkeypatch):
+    async with get_db_session() as session:
+        await session.execute(delete(PoolPurchase))
+        session.add(PoolPurchase(
+            id=f"ppc-{uuid.uuid4().hex}", desktop_id=None,
+            unit_price=200, currency="CNY", quantity=2,
+            request_id=None, status="ordered", created_by="system",
+            created_at=datetime.now(timezone.utc), error=None,
+        ))
+    monkeypatch.setattr(
+        pool_module,
+        "get_config",
+        lambda: _config(pool_target_prewarm=1, pool_max_purchases_per_day=2),
+    )
+
+    async def desktops():
+        return []
+
+    async def price(*_args, **_kwargs):
+        return {"trade_price": 200, "currency": "CNY"}
+
+    async def balance():
+        return {"available_balance": 1000, "currency": "CNY"}
+
+    monkeypatch.setattr(pool_module.wuying_ecd, "list_fleet_desktops", desktops)
+    monkeypatch.setattr(pool_module.wuying_ecd, "describe_price", price)
+    monkeypatch.setattr(pool_module.wuying_ecd, "query_account_balance", balance)
+    result = await PoolService().ensure_prewarm(dry_run=True)
+    assert result["status"] == "blocked"
+    assert result["gate"] == "daily_limit"
+
+
+async def test_ensure_prewarm_purchase_persists_ledger_and_desktop(monkeypatch):
+    async with get_db_session() as session:
+        await session.execute(delete(PoolPurchase))
+        await session.execute(delete(FleetAlert))
+    desktop_id = f"ecd-purchased-{uuid.uuid4().hex[:8]}"
+    monkeypatch.setattr(
+        pool_module,
+        "get_config",
+        lambda: _config(pool_target_prewarm=1, pool_auto_purchase=True),
+    )
+
+    async def desktops():
+        return []
+
+    async def price(*_args, **_kwargs):
+        return {"trade_price": 200, "currency": "CNY"}
+
+    async def balance():
+        return {"available_balance": 1000, "currency": "CNY"}
+
+    async def create():
+        return {"desktop_id": desktop_id, "request_id": "req-purchase"}
+
+    async def noop(*_args, **_kwargs):
+        return None
+
+    async def describe(_desktop_id):
+        return {
+            "desktop_id": desktop_id,
+            "status": "Running",
+            "charge_type": "PrePaid",
+            "expired_time": (datetime.now(timezone.utc) + timedelta(days=30)).isoformat(),
+            "desktop_type": "eds.enterprise_office.6c12g",
+        }
+
+    monkeypatch.setattr(pool_module.wuying_ecd, "list_fleet_desktops", desktops)
+    monkeypatch.setattr(pool_module.wuying_ecd, "describe_price", price)
+    monkeypatch.setattr(pool_module.wuying_ecd, "query_account_balance", balance)
+    monkeypatch.setattr(pool_module.wuying_ecd, "create_desktop_for_pool", create)
+    monkeypatch.setattr(pool_module.wuying_ecd, "wait_desktop_ready", noop)
+    monkeypatch.setattr(pool_module, "verify_prewarm", noop)
+    monkeypatch.setattr(pool_module.wuying_ecd, "describe_desktop", describe)
+
+    result = await PoolService().ensure_prewarm(dry_run=False)
+    assert result["status"] == "purchased"
+    assert result["created"] == [desktop_id]
+    record = await cloud_desktop_repo.get_by_desktop_id(desktop_id)
+    assert record["pool_state"] == "prewarm"
+    assert record["workspace_id"] is None
+    async with get_db_session() as session:
+        purchase = (await session.execute(select(PoolPurchase))).scalar_one()
+    assert purchase.status == "created"
+    assert purchase.desktop_id == desktop_id
+    assert purchase.request_id == "req-purchase"
 
 
 async def test_concurrent_claims_never_share_a_desktop(monkeypatch):
@@ -323,3 +495,65 @@ async def test_retired_desktop_cannot_be_recycled(monkeypatch):
     )
     with pytest.raises(PoolStateError, match="not recyclable"):
         await PoolService().recycle(record["desktop_id"], "admin", approve=True)
+
+
+async def test_renew_expiring_is_dry_run_until_auto_renew_enabled(monkeypatch):
+    desktop_id = f"ecd-renew-preview-{uuid.uuid4().hex[:8]}"
+    await _prewarm(desktop_id, expires_days=2)
+    monkeypatch.setattr(
+        pool_module, "get_config", lambda: _config(pool_auto_renew=False)
+    )
+
+    async def forbidden(*_args, **_kwargs):
+        raise AssertionError("renewal must not run while POOL_AUTO_RENEW=false")
+
+    monkeypatch.setattr(pool_module.wuying_ecd, "renew_desktop", forbidden)
+    result = await PoolService().renew_expiring(dry_run=False)
+    assert result["status"] == "dry_run"
+    assert desktop_id in result["due"]
+    assert result["renewed"] == []
+
+
+async def test_renew_expiring_renews_due_capacity_and_skips_retired(monkeypatch):
+    due_id = f"ecd-renew-due-{uuid.uuid4().hex[:8]}"
+    retired_id = f"ecd-renew-retired-{uuid.uuid4().hex[:8]}"
+    due = await _prewarm(due_id, expires_days=2)
+    await cloud_desktop_repo.create(
+        None,
+        "cn-shanghai",
+        status="running",
+        desktop_id=retired_id,
+        pool_state="retired",
+        expires_at=datetime.now(timezone.utc) + timedelta(days=2),
+        charge_type="PrePaid",
+    )
+    monkeypatch.setattr(
+        pool_module, "get_config", lambda: _config(pool_auto_renew=True)
+    )
+    calls = []
+    renewed_until = datetime.now(timezone.utc) + timedelta(days=32)
+
+    async def renew(desktop_id, *_args, **_kwargs):
+        calls.append(desktop_id)
+        return {"order_id": "order-1"}
+
+    async def describe(desktop_id):
+        return {"desktop_id": desktop_id, "expired_time": renewed_until.isoformat()}
+
+    monkeypatch.setattr(pool_module.wuying_ecd, "renew_desktop", renew)
+    monkeypatch.setattr(pool_module.wuying_ecd, "describe_desktop", describe)
+    result = await PoolService().renew_expiring(dry_run=False)
+    assert result["status"] == "renewed"
+    assert due_id in result["renewed"]
+    assert calls == result["renewed"]
+    assert retired_id not in result["due"]
+    refreshed = await cloud_desktop_repo.get(due["id"])
+    assert refreshed["expires_at"].replace(tzinfo=timezone.utc) == renewed_until
+
+
+async def test_manual_renew_requires_explicit_approval(monkeypatch):
+    desktop_id = f"ecd-renew-approval-{uuid.uuid4().hex[:8]}"
+    await _prewarm(desktop_id, expires_days=2)
+    monkeypatch.setattr(pool_module, "get_config", lambda: _config())
+    with pytest.raises(PaidOperationApprovalRequired, match="approve=true"):
+        await PoolService().renew(desktop_id, "admin", approve=False)

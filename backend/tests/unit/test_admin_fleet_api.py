@@ -73,3 +73,51 @@ async def test_non_admin_cannot_read_fleet():
         "GET", "/api/admin/fleet/pool",
     )
     assert response.status_code == 403
+
+
+async def test_admin_can_preview_pool_ensure(monkeypatch):
+    suffix = uuid.uuid4().hex[:10]
+    user = await PgUserRepo().create(
+        id=f"fleet-ensure-{suffix}", username=f"fleet-ensure-{suffix}",
+        password_hash="unused", role="admin",
+    )
+    from sandbox.pool import pool_service
+
+    async def ensure_prewarm(*, dry_run, actor):
+        assert dry_run is True
+        assert actor == user["id"]
+        return {
+            "status": "dry_run", "current": 4, "target": 5,
+            "gap": 1, "quantity": 1, "unit_price": 200, "currency": "CNY",
+        }
+
+    monkeypatch.setattr(pool_service, "ensure_prewarm", ensure_prewarm)
+    response = await _request(
+        create_app(), {"user_id": user["id"], "role": "admin"},
+        "POST", "/api/admin/fleet/pool/ensure?dry_run=true",
+    )
+    assert response.status_code == 200
+    assert response.json()["quantity"] == 1
+
+
+async def test_admin_renew_forwards_explicit_approval(monkeypatch):
+    suffix = uuid.uuid4().hex[:10]
+    user = await PgUserRepo().create(
+        id=f"fleet-renew-{suffix}", username=f"fleet-renew-{suffix}",
+        password_hash="unused", role="admin",
+    )
+    from sandbox.pool import pool_service
+
+    async def renew(desktop_id, actor, *, approve):
+        assert desktop_id == "ecd-renew"
+        assert actor == user["id"]
+        assert approve is True
+        return {"desktop_id": desktop_id, "pool_state": "prewarm"}
+
+    monkeypatch.setattr(pool_service, "renew", renew)
+    response = await _request(
+        create_app(), {"user_id": user["id"], "role": "admin"},
+        "POST", "/api/admin/fleet/desktops/ecd-renew/renew", {"approve": True},
+    )
+    assert response.status_code == 200
+    assert response.json()["desktop_id"] == "ecd-renew"

@@ -29,12 +29,26 @@ export interface PoolSummary {
   purchased_today: number
   enabled: boolean
   auto_purchase: boolean
+  auto_renew: boolean
   gates: {
     max_unit_price_cny: number
     max_per_tick: number
     max_per_day: number
     min_balance_multiple: number
   }
+}
+
+export interface PoolEnsureResult {
+  status: "disabled" | "satisfied" | "blocked" | "dry_run" | "purchased"
+  current: number
+  target: number
+  gap: number
+  quantity: number
+  unit_price?: number
+  currency?: string
+  gate?: string
+  message?: string
+  created?: string[]
 }
 
 export interface FleetSnapshot {
