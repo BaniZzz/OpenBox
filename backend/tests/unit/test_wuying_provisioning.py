@@ -173,6 +173,46 @@ async def test_create_desktop_billing_request_shape(monkeypatch, charge_type, ex
     }
 
 
+async def test_create_pool_desktop_is_prepaid_and_has_no_end_user(monkeypatch):
+    captured = {}
+
+    class Client:
+        async def create_desktops_async(self, request):
+            captured["request"] = request
+            return SimpleNamespace(
+                body=SimpleNamespace(desktop_id=["ecd-pool"], request_id="req-pool")
+            )
+
+    monkeypatch.setattr(wuying_ecd, "ecd_client", lambda: Client())
+    monkeypatch.setattr(
+        wuying_ecd,
+        "get_config",
+        lambda: _config(
+            wuying_image_id="m-v3",
+            wuying_office_site_id="cn-shanghai+dir-test",
+            wuying_policy_group_id="pg-1080p",
+            wuying_env_tag="prod",
+            wuying_desktop_type="eds.enterprise_office.6c12g",
+            wuying_system_disk_size=50,
+        ),
+    )
+
+    result = await wuying_ecd.create_desktop_for_pool()
+    assert result["desktop_id"] == "ecd-pool"
+    assert result["request_id"] == "req-pool"
+    request = captured["request"]
+    assert request.charge_type == "PrePaid"
+    assert request.end_user_id is None
+    assert request.auto_pay is True
+    assert request.auto_renew is False
+    assert {(tag.key, tag.value) for tag in request.tag} == {
+        (wuying_ecd.TAG_ENV, "prod"),
+        (wuying_ecd.TAG_POOL, "prewarm"),
+        (wuying_ecd.TAG_SPEC, "eds.enterprise_office.6c12g"),
+        (wuying_ecd.TAG_IMAGE, "m-v3"),
+    }
+
+
 async def test_describe_price_parses_sdk_shape(monkeypatch):
     captured = {}
 

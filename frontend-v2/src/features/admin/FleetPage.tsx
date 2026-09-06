@@ -4,6 +4,7 @@ import { Spinner } from "@/shared/ui/Spinner"
 import {
   useAckAlert,
   useAdoptDesktop,
+  useEnsurePool,
   useFleetAlerts,
   useFleetDesktops,
   useFleetSnapshot,
@@ -34,10 +35,12 @@ export function FleetPage() {
   const recycle = useRecycleDesktop()
   const retire = useRetireDesktop()
   const adopt = useAdoptDesktop()
+  const ensure = useEnsurePool()
   const [adoptId, setAdoptId] = useState("")
   const [adoptState, setAdoptState] = useState<"reserve" | "prewarm">("reserve")
   const [adoptRebuild, setAdoptRebuild] = useState(false)
   const [gatewayReleaseVerified, setGatewayReleaseVerified] = useState(false)
+  const [ensureMessage, setEnsureMessage] = useState("")
 
   if ([pool, desktops, alerts, snapshot].some((query) => query.isPending)) {
     return <div className="flex justify-center py-16"><Spinner className="size-5" /></div>
@@ -80,6 +83,31 @@ export function FleetPage() {
             multiple: summary.gates.min_balance_multiple,
           })}
         </p>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button className={button} disabled={ensure.isPending} onClick={() => {
+            ensure.mutate(true, {
+              onSuccess: (result) => setEnsureMessage(t("pool.ensureResult", {
+                status: result.status,
+                current: result.current,
+                target: result.target,
+                quantity: result.quantity,
+              })),
+            })
+          }}>{t("pool.dryRun")}</button>
+          <button className={button} disabled={ensure.isPending} onClick={() => {
+            if (!window.confirm(t("pool.confirmEnsure"))) return
+            ensure.mutate(false, {
+              onSuccess: (result) => setEnsureMessage(t("pool.ensureResult", {
+                status: result.status,
+                current: result.current,
+                target: result.target,
+                quantity: result.quantity,
+              })),
+            })
+          }}>{t("pool.ensure")}</button>
+          {ensureMessage && <span className="text-xs text-n600">{ensureMessage}</span>}
+          {ensure.isError && <span className="text-xs text-danger">{t("pool.ensureFailed")}</span>}
+        </div>
         <form className="mt-4 flex flex-wrap items-center gap-2" onSubmit={(event) => {
           event.preventDefault()
           const id = adoptId.trim()

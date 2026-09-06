@@ -156,10 +156,16 @@ def register_builtin_tasks() -> None:
     """Register the smoke-test task and future maintenance tasks centrally."""
     from core.config import get_config
     from sandbox.fleet import run_snapshot_task
+    from sandbox.pool import run_ensure_prewarm_task
 
     register("noop", 30, _noop)
     register(
         "fleet_snapshot",
         get_config().fleet_snapshot_interval_sec,
         run_snapshot_task,
+    )
+    register(
+        "ensure_prewarm",
+        get_config().fleet_snapshot_interval_sec,
+        run_ensure_prewarm_task,
     )

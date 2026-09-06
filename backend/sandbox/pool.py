@@ -1,11 +1,18 @@
 """ECD pool state machine: adopt, assign, release, recycle, and retire."""
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
+from sqlalchemy import func, select
+
 from core.config import get_config
+from core.identifier import ascending
 from core.log import create_logger
+from db.base import get_db_session
+from db.models.fleet import FleetAlert, PoolPurchase
 from db.repository.cloud_desktop_repo import cloud_desktop_repo
 from sandbox import wuying_ecd
 from sandbox.channel import run_desktop_command, wuying_channel
@@ -32,6 +39,7 @@ CHANNEL_CLEAR_FIELDS = {
     "last_seen_at": None,
     "channel_error": None,
 }
+_ensure_lock = asyncio.Lock()
 
 
 class PoolStateError(RuntimeError):
@@ -69,6 +77,32 @@ def _allowlist() -> set[str]:
     }
 
 
+def _money(value: Any, field: str) -> Decimal:
+    try:
+        amount = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise PoolStateError(f"{field} is not a valid amount: {value!r}") from exc
+    if not amount.is_finite() or amount < 0:
+        raise PoolStateError(f"{field} is not a valid amount: {value!r}")
+    return amount
+
+
+async def _clear_purchase_blocked() -> None:
+    now = datetime.now(timezone.utc)
+    async with get_db_session() as session:
+        rows = (
+            await session.execute(
+                select(FleetAlert).where(
+                    FleetAlert.rule == "purchase_blocked",
+                    FleetAlert.resource_id == "purchase",
+                    FleetAlert.resolved_at.is_(None),
+                )
+            )
+        ).scalars().all()
+        for row in rows:
+            row.resolved_at = now
+
+
 async def _audit(
     actor: str | None,
     workspace_id: str | None,
@@ -81,6 +115,39 @@ async def _audit(
     from audit import record
 
     await record(actor, workspace_id, action, "cloud_desktop", desktop_id, detail)
+
+
+async def _update_purchase(purchase_id: str, **values: Any) -> None:
+    async with get_db_session() as session:
+        row = await session.get(PoolPurchase, purchase_id)
+        if row is None:
+            raise PoolStateError(f"purchase ledger row {purchase_id} disappeared")
+        for key, value in values.items():
+            setattr(row, key, value)
+
+
+async def _purchase_blocked(
+    gate: str,
+    message: str,
+    actor: str | None,
+    **detail: Any,
+) -> dict[str, Any]:
+    from sandbox.fleet import Finding, open_operational_alert
+
+    payload = {"gate": gate, **detail}
+    await open_operational_alert(Finding(
+        rule="purchase_blocked",
+        severity="warn",
+        resource_type="pool",
+        resource_id="purchase",
+        message=message,
+        detail=payload,
+    ))
+    await _audit(actor, None, "pool.purchase_blocked", "purchase", {
+        "message": message,
+        **payload,
+    })
+    return {"status": "blocked", "gate": gate, "message": message, **detail}
 
 
 async def verify_prewarm(desktop_id: str) -> dict[str, Any]:
@@ -110,6 +177,209 @@ async def verify_prewarm(desktop_id: str) -> dict[str, Any]:
 
 
 class PoolService:
+    async def ensure_prewarm(
+        self,
+        *,
+        dry_run: bool = False,
+        actor: str | None = None,
+    ) -> dict[str, Any]:
+        """Fill the prewarm pool only after all purchase safety gates pass."""
+        config = get_config()
+        if not config.pool_enabled:
+            return {
+                "status": "disabled",
+                "current": 0,
+                "target": config.pool_target_prewarm,
+                "gap": config.pool_target_prewarm,
+                "quantity": 0,
+            }
+
+        async with _ensure_lock:
+            remote = await wuying_ecd.list_fleet_desktops()
+            usable = [
+                item for item in remote
+                if (item.get("tags") or {}).get(wuying_ecd.TAG_POOL) == "prewarm"
+                and item.get("status") not in {"Expired", "Deleted", "Deleting", "Failed"}
+            ]
+            current = len(usable)
+            target = config.pool_target_prewarm
+            gap = max(0, target - current)
+            base = {"current": current, "target": target, "gap": gap}
+            if gap == 0:
+                await _clear_purchase_blocked()
+                return {"status": "satisfied", **base, "quantity": 0}
+
+            quote = await wuying_ecd.describe_price(
+                "PrePaid",
+                period=config.wuying_period,
+                period_unit=config.wuying_period_unit,
+            )
+            unit_price = _money(quote.get("trade_price"), "trade_price")
+            if unit_price <= 0:
+                return {
+                    **base,
+                    **await _purchase_blocked(
+                        "price_unavailable",
+                        "Alibaba Cloud returned no positive pool purchase price",
+                        actor,
+                        unit_price=float(unit_price),
+                    ),
+                    "quantity": 0,
+                }
+            max_price = _money(config.pool_max_unit_price_cny, "POOL_MAX_UNIT_PRICE_CNY")
+            if unit_price > max_price:
+                return {
+                    **base,
+                    **await _purchase_blocked(
+                        "unit_price",
+                        "Pool purchase price exceeds POOL_MAX_UNIT_PRICE_CNY",
+                        actor,
+                        unit_price=float(unit_price),
+                        max_unit_price=float(max_price),
+                    ),
+                    "quantity": 0,
+                }
+
+            balance_info = await wuying_ecd.query_account_balance()
+            balance = _money(balance_info.get("available_balance"), "available_balance")
+            required_balance = unit_price * Decimal(
+                str(config.pool_min_account_balance_multiple)
+            )
+            if balance < required_balance:
+                return {
+                    **base,
+                    **await _purchase_blocked(
+                        "account_balance",
+                        "Alibaba Cloud balance is below the pool purchase safety floor",
+                        actor,
+                        available_balance=float(balance),
+                        required_balance=float(required_balance),
+                        unit_price=float(unit_price),
+                    ),
+                    "quantity": 0,
+                }
+
+            now = datetime.now(timezone.utc)
+            start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            async with get_db_session() as session:
+                purchased_today = await session.scalar(
+                    select(func.coalesce(func.sum(PoolPurchase.quantity), 0)).where(
+                        PoolPurchase.created_at >= start,
+                        PoolPurchase.status.in_(("ordered", "created")),
+                    )
+                )
+            purchased_today = int(purchased_today or 0)
+            remaining_today = config.pool_max_purchases_per_day - purchased_today
+            if remaining_today <= 0:
+                return {
+                    **base,
+                    **await _purchase_blocked(
+                        "daily_limit",
+                        "Daily pool purchase limit has been reached",
+                        actor,
+                        purchased_today=purchased_today,
+                        max_per_day=config.pool_max_purchases_per_day,
+                    ),
+                    "quantity": 0,
+                }
+
+            quantity = min(
+                gap,
+                config.pool_max_purchases_per_tick,
+                remaining_today,
+            )
+            plan = {
+                **base,
+                "quantity": quantity,
+                "unit_price": float(unit_price),
+                "currency": quote.get("currency") or balance_info.get("currency") or "CNY",
+                "purchased_today": purchased_today,
+            }
+            if dry_run or not config.pool_auto_purchase:
+                await _clear_purchase_blocked()
+                return {
+                    "status": "dry_run",
+                    "auto_purchase": config.pool_auto_purchase,
+                    **plan,
+                }
+
+            created: list[str] = []
+            created_by = actor or "system"
+            for _ in range(quantity):
+                purchase_id = ascending("ppc")
+                async with get_db_session() as session:
+                    session.add(PoolPurchase(
+                        id=purchase_id,
+                        desktop_id=None,
+                        unit_price=unit_price,
+                        currency=plan["currency"],
+                        quantity=1,
+                        request_id=None,
+                        status="ordered",
+                        created_by=created_by,
+                        created_at=datetime.now(timezone.utc),
+                        error=None,
+                    ))
+                desktop_id: str | None = None
+                try:
+                    provisioned = await wuying_ecd.create_desktop_for_pool()
+                    desktop_id = provisioned["desktop_id"]
+                    await _update_purchase(
+                        purchase_id,
+                        desktop_id=desktop_id,
+                        request_id=provisioned.get("request_id"),
+                    )
+                    await wuying_ecd.wait_desktop_ready(
+                        desktop_id,
+                        timeout_sec=900,
+                        expected_image_id=config.wuying_image_id,
+                    )
+                    await verify_prewarm(desktop_id)
+                    info = await wuying_ecd.describe_desktop(desktop_id) or {}
+                    await cloud_desktop_repo.create(
+                        None,
+                        config.wuying_region_id,
+                        status="running",
+                        desktop_id=desktop_id,
+                        end_user_id=None,
+                        charge_type=info.get("charge_type") or "PrePaid",
+                        expires_at=_expiry(info.get("expired_time")),
+                        pool_state="prewarm",
+                        pool="internal",
+                        spec=info.get("desktop_type") or config.wuying_desktop_type,
+                        golden_image_id=config.wuying_image_id,
+                        tunnel_state="revoked",
+                    )
+                    await _update_purchase(purchase_id, status="created", error=None)
+                    await _audit(actor, None, "pool.purchase", desktop_id, {
+                        "purchase_id": purchase_id,
+                        "unit_price": float(unit_price),
+                        "currency": plan["currency"],
+                        "request_id": provisioned.get("request_id"),
+                    })
+                    created.append(desktop_id)
+                except Exception as exc:
+                    await _update_purchase(
+                        purchase_id,
+                        desktop_id=desktop_id,
+                        status="failed",
+                        error=str(exc)[:2000],
+                    )
+                    await _purchase_blocked(
+                        "create_failed",
+                        "Pool desktop creation or verification failed",
+                        actor,
+                        purchase_id=purchase_id,
+                        desktop_id=desktop_id,
+                        error=str(exc)[:2000],
+                    )
+                    raise PoolStateError(
+                        f"pool purchase {purchase_id} failed: {exc}"
+                    ) from exc
+
+            await _clear_purchase_blocked()
+            return {"status": "purchased", **plan, "created": created}
+
     async def claim(
         self, workspace_id: str, triggered_by_user_id: str | None
     ) -> dict | None:
@@ -485,3 +755,10 @@ class PoolService:
 
 
 pool_service = PoolService()
+
+
+async def run_ensure_prewarm_task() -> None:
+    """Registered-task adapter; the auto-purchase flag remains the final gate."""
+    if get_config().sandbox_provider != "wuying":
+        return
+    await pool_service.ensure_prewarm(dry_run=False)

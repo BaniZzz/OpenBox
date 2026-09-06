@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import secrets
 from typing import Any
 
 from core.aliyun import load_credentials
@@ -309,6 +310,60 @@ async def create_desktop(workspace_id: str, display_name: str | None = None) -> 
         f"Desktop created: {desktop_id} (workspace={workspace_id} -> eu={eu_id})"
     )
     return desktop_id
+
+
+async def create_desktop_for_pool() -> dict[str, Any]:
+    """Create one prepaid, unassigned desktop for the prewarm pool."""
+    from alibabacloud_ecd20200930 import models as ecd_models
+
+    config = get_config()
+    if not config.wuying_image_id:
+        raise ProvisioningConfigError("WUYING_IMAGE_ID is required for pool purchase")
+    if not config.wuying_office_site_id:
+        raise ProvisioningConfigError("WUYING_OFFICE_SITE_ID is required for pool purchase")
+    if not config.wuying_policy_group_id:
+        raise ProvisioningConfigError("WUYING_POLICY_GROUP_ID is required for pool purchase")
+
+    desktop_name = f"obx-pool-{secrets.token_hex(4)}"
+    request = ecd_models.CreateDesktopsRequest(
+        region_id=config.wuying_region_id,
+        office_site_id=config.wuying_office_site_id,
+        policy_group_id=config.wuying_policy_group_id,
+        charge_type="PrePaid",
+        desktop_name=desktop_name,
+        amount=1,
+        period=config.wuying_period,
+        period_unit=config.wuying_period_unit,
+        auto_pay=True,
+        auto_renew=False,
+        tag=[
+            ecd_models.CreateDesktopsRequestTag(key=TAG_ENV, value=config.wuying_env_tag),
+            ecd_models.CreateDesktopsRequestTag(key=TAG_POOL, value="prewarm"),
+            ecd_models.CreateDesktopsRequestTag(
+                key=TAG_SPEC, value=config.wuying_desktop_type
+            ),
+            ecd_models.CreateDesktopsRequestTag(key=TAG_IMAGE, value=config.wuying_image_id),
+        ],
+        desktop_attachment=ecd_models.CreateDesktopsRequestDesktopAttachment(
+            image_id=config.wuying_image_id,
+            desktop_type=config.wuying_desktop_type,
+            system_disk_size=config.wuying_system_disk_size,
+        ),
+    )
+    response = await _retry_throttled(
+        lambda: ecd_client().create_desktops_async(request), "CreateDesktops(pool)"
+    )
+    body = response.body
+    desktop_ids = list(getattr(body, "desktop_id", None) or [])
+    if len(desktop_ids) != 1:
+        raise RuntimeError(
+            f"CreateDesktops(pool) returned {len(desktop_ids)} desktop ids, expected 1"
+        )
+    return {
+        "desktop_id": desktop_ids[0],
+        "request_id": getattr(body, "request_id", None),
+        "desktop_name": desktop_name,
+    }
 
 
 async def describe_desktop(desktop_id: str) -> dict[str, Any] | None:

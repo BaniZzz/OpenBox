@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { http } from "@/shared/api/http"
-import type { FleetAlert, FleetDesktop, FleetSnapshot, PoolSummary } from "./types"
+import type { FleetAlert, FleetDesktop, FleetSnapshot, PoolEnsureResult, PoolSummary } from "./types"
 
 
 const keys = {
@@ -43,7 +43,7 @@ export function useFleetSnapshot() {
   })
 }
 
-function useFleetMutation<T>(mutationFn: (value: T) => Promise<unknown>) {
+function useFleetMutation<T, R = unknown>(mutationFn: (value: T) => Promise<R>) {
   const client = useQueryClient()
   return useMutation({
     mutationFn,
@@ -60,6 +60,12 @@ export function useAckAlert() {
 export function useMuteAlert() {
   return useFleetMutation(({ id, until }: { id: string; until: string }) =>
     http.post(`/api/admin/fleet/alerts/${encodeURIComponent(id)}/mute`, { until }),
+  )
+}
+
+export function useEnsurePool() {
+  return useFleetMutation((dryRun: boolean) =>
+    http.post<PoolEnsureResult>(`/api/admin/fleet/pool/ensure?dry_run=${dryRun}`),
   )
 }
 

@@ -37,6 +37,19 @@ export interface PoolSummary {
   }
 }
 
+export interface PoolEnsureResult {
+  status: "disabled" | "satisfied" | "blocked" | "dry_run" | "purchased"
+  current: number
+  target: number
+  gap: number
+  quantity: number
+  unit_price?: number
+  currency?: string
+  gate?: string
+  message?: string
+  created?: string[]
+}
+
 export interface FleetSnapshot {
   taken_at?: string | null
   sources: Array<{ source: string; ok: boolean; error?: string | null }>

@@ -119,6 +119,28 @@ async def get_pool(request: Request, admin: dict = Depends(require_admin)):
     }
 
 
+@router.post("/pool/ensure")
+async def ensure_pool(
+    request: Request,
+    dry_run: bool = Query(True),
+    admin: dict = Depends(require_admin),
+):
+    from sandbox.pool import PoolStateError, pool_service
+
+    try:
+        result = await pool_service.ensure_prewarm(
+            dry_run=dry_run,
+            actor=admin["user_id"],
+        )
+    except PoolStateError as exc:
+        raise _pool_http_error(exc) from exc
+    await record(
+        admin["user_id"], admin.get("workspace_id"), "admin.fleet.ensure_pool",
+        "pool", "prewarm", {"dry_run": dry_run, "result": result}, request,
+    )
+    return result
+
+
 @router.get("/alerts")
 async def list_alerts(
     request: Request,
