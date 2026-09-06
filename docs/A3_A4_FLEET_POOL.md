@@ -51,15 +51,15 @@
 |---|---|---|
 | 1 | **openbox-dev-shanghai 不入池**（2026-09-04 拍板），留给 `demo` 账号；快照规则把它当普通 assigned 桌面对待 | 已定 |
 | 0 | **当前基准镜像是 40G v3 `m-ihn7zmzukytina8qj`（`openbox-image-v3-40g-shanghai`）**。云侧实查 013–010 的系统盘均为 40G；50G 镜像不能重建到 40G 目标盘，扩容至少到 80G 且计费，因此改用已 release 的 013 走 image-mode 产出 40G v3。verifier 全项通过，包含 1456 个基线包、1080p guard、空 `/workspace`/`/etc/openbox`/root SSH、无运行时秘密。旧 50G v3 `m-71ycatssqymjmum8x` 保留作回滚，不删除 | 已完成 |
-| 2 | **预热水位 5**（已定且已达成）。云侧实查纠正旧文档：bossip 013–010 都是 **40G SYSTEM 盘**，不是 80G。首批已将 A2 与 release 后的 013–010 全部重建到 40G v3 并收养；009/008 保持原状作后备，001–006 按既定决策不续，共享 007 永不纳管。完整 allowlist 仍保留为硬护栏 | 已完成 |
-| 3 | **新购默认规格定为 6c12g**（`WUYING_DESKTOP_TYPE=eds.enterprise_office.6c12g`）；四台 bossip 池机是 6c12g，A2 保持实际 4c8g，`openbox-spec` 与 DB 均记录每台实际规格，不再声称存量池规格完全一致。新购系统盘仍按原方案配置为 50G（40G 金镜像可向上创建）；本批水位已靠收养补足，没有下单 | 已定 |
+| 2 | **最低预热水位 5，现有总容量 13**。云侧实查纠正旧文档：bossip 001 是 50G SYSTEM 盘，其余本次核验的机器均为 40G，不是旧文档所称 80G。已将 A2 与除共享 007 外的 001–006、008–013 全部 release、重建到 40G v3 并收养；当前 12 台 prewarm、013 另有 1 台 assigned。007 保持 shared，不纳管 | 已完成 |
+| 3 | **新购默认规格定为 6c12g**（`WUYING_DESKTOP_TYPE=eds.enterprise_office.6c12g`）；十二台原 bossip 池机是 6c12g，A2 保持实际 4c8g，`openbox-spec` 与 DB 均记录每台实际规格。新购系统盘仍按原方案配置为 50G（40G 金镜像可向上创建）；容量已靠收养补足，没有下单 | 已定 |
 | 4 | 阿里云余额是否足够新购；采购审批人 = 用户本人 | 用户确认 |
 | 5 | **告警 webhook 本版不做**（2026-09-04 拍板），告警只进后台与日志；管理平台搭好后再梳理推送 | 已定 |
 | 6 | gw2 部署与回滚照 `docs/DEPLOY.md`；alembic 自动迁移；**队友也在直接部署 gw2**，部署前先看 `.env` 当前 tag | 已知 |
 | 7 | **环境实查补漏（2026-09-05）** | |
 | 7a | bossip 12 台的策略组都是 `system-all-enabled-policy`（不是 1080p 的 `pg-0bbay5jmvosn8b2hc`）→ `adopt` 必须调 `ModifyDesktopsPolicyGroup` 切到 `WUYING_POLICY_GROUP_ID`，预热校验要断言策略组正确 | 写进 §4.5 |
 | 7b | 12 台都绑着 `bossip-slot2…15` EndUser、全部 Disconnected（无人在用）；重建后必须解绑，否则 bossip 侧账号仍能用无影客户端登进池机 | 写进 §4.5 |
-| 7c | 到期日：001/002 **10-04**，003–006 **10-06**，008–013 10-11/12。本批使用 A2 + **010–013**；009/008 保持原状作后备。001–006 六台**不续**（2026-09-05 拍板），任其在 10-04/10-06 到期释放；后续明确纳管为 abandon 时，快照规则不报 `expiring_soon`（allowlist 内且 `pool_state=reserve` 且未 adopt 的机器视为「放弃」，标签打 `openbox-pool=abandon`） | 已定 |
+| 7c | 到期日：001/002 **10-04**，003–006 **10-06**，008–013 10-11/12。2026-09-07 用户撤销旧“不续/后备”处置，除 007 外已全部 adopt 进热池；当前自动续期仍关闭，首次真实续费前仍需另行报价与确认。007 在 10-07 到期，继续 shared，本轮未决定续期或迁移 | 待到期决策 |
 | 7d | gw2 已显式配置 `WUYING_DESKTOP_TYPE=eds.enterprise_office.6c12g`、`WUYING_SYSTEM_DISK_SIZE=50` 与全部 `POOL_*` 键；当前 `POOL_ENABLED=true`，自动采购和自动续期均为 false | 已完成 |
 | 7e | gw2 只有一个 admin 账号 `m1adm-0904`（M1 验收用的测试号），`demo` 是普通用户；后台页要用得把 `demo` 提成 admin。**Logto 登录不会带来 admin**：SSO 首登按普通用户建号，`users.role` 只在建号时默认 `user`，没有任何 claim→role 映射，也没有提权接口；只能 SQL：`update users set role='admin' where username='demo'`（角色写在 JWT 里，改完要重新登录）。claim 映射留给里程碑三的运营角色 | SQL 提权 |
 | 7f | gw2 后端用的阿里云 AK 是**主账号 AK**（权限不成问题，BSS/重建/续费都能调），但主账号 AK 放在服务器上风险大，且验收人排查时曾把该 AK 打进过会话日志——建议本项上线前**换成 RAM 子账号 AK**（ECD/EDS 全权 + `AliyunBSSReadOnlyAccess`），替换 `/opt/openbox/secrets/aliyun-config.json` 并**吊销旧 AK** | 建议，用户定 |
@@ -284,6 +284,44 @@ cd frontend-v2 && npm run check
 3. 收养后已是 5/5，按 AC-6 跳过 6c12g 新购；自动采购保持关闭。
 4. 009/008 未操作，保持原状作后备；001–006 按不续决策单独收尾；共享 007 未触碰且
    永不纳管。
+
+## 8.2 第二批扩池与按量机清退（2026-09-07）
+
+- **决策覆盖**：用户撤销“001–006 不续、008/009 只作后备”的旧处置，明确要求除
+  007 外将 001–006、008、009 共 8 台全部重建进热池，供次日回流账号使用；007
+  `ecd-4zjxaq5g45dr5qr0i` 仍是 shared 桌面，本轮不改配置、不解绑、不重建、不续费。
+- **唯一按量机清退**：确认 `andrewwang` 的唯一桌面为 PostPaid
+  `ecd-iu2s0ki7ez79l46sm`，操作前为 Running 但会话 Disconnected。按用户“不再保留
+  按量机”指令，已撤通道并执行 `DeleteDesktops`，DB 行软删除，便利 EndUser
+  `obx-68b71c2785f3e76a` 在云删除传播后清理成功；审计 `desktop.revoke` 与
+  `desktop.ghost` 各 1 条。最终云侧 `DescribeDesktops(charge_type=PostPaid)` 返回空，
+  活跃 DB PostPaid 行为 0。按量已消费金额不存在退款，本操作效果是从删除时起停止继续
+  计费。
+- **BossIP release**：在 bossip-gw-1 对 slot2–7、slot10、slot11 逐一执行
+  `pool-manager.sh release`，共移除 8 条 binding 和 4 条残留 provisioning job；
+  release 后八台均为 `reclaim` 且绑定用户为 `-`。最终 BossIP inventory 只剩未触碰的
+  007/slot8。
+- **第二批 adopt**：八台均为现有 PrePaid 6c12g 机器（001 为 50G 系统盘，其余七台
+  为 40G），重建前没有 Connected
+  会话。按 allowlist 与 `gateway_release_verified=true` 逐台批准重建到
+  `m-ihn7zmzukytina8qj` 并进入 prewarm：001 71.55s、002 65.44s、003 66.04s、
+  004 65.43s、005 71.19s、006 70.46s、008 66.33s、009 65.35s。八台最终均
+  Running、1080p 策略组 `pg-0bbay5jmvosn8b2hc`、EndUser/workspace 为空、通道
+  revoked、DB error 为空；`pool.adopt_rebuild_started` 与 `pool.adopt` 审计各 8 条。
+- **标签收口**：adopt 已移除 `purpose/pool/codex-user/spec` 等 BossIP 管理标签；随后
+  对全部 OpenBox 池机清理遗留的 `expires/codex-slot`，最终所有池机只剩
+  `openbox-*` 标签。
+- **最终容量**：云侧共 13 台 OpenBox 池机，其中 **12 台 prewarm + 1 台 assigned**；
+  assigned 为正在正常使用且通道 up 的 013 `ecd-glxi1nk433hliivri`。最低空闲水位仍为
+  5，`ensure_prewarm` 返回 `satisfied(current=12, gap=0, quantity=0)`；自动采购、
+  自动续期继续关闭，没有 CreateDesktops 或 RenewDesktops，也没有新增订单。
+- **最终快照**：`ecd/db/account` 三源均 `ok=true`；andrewwang 的
+  `postpaid_running/tag_mismatch` 已自动关闭。仅剩既有
+  `openbox-dev-shanghai`（`ecd-8zp47qagrsc95h67t`）一条 tag mismatch，本轮未改该
+  在用桌面。生产版本为 `20260907-main-61227cc`，四个 compose 服务均健康。
+- **累计破坏性调用账本**：在 §8.0 的 7 次成功 Rebuild 基础上新增本批 8 次，A3
+  累计 **15 次成功 RebuildDesktops**；另新增 1 次明确批准的 PostPaid
+  DeleteDesktops。累计真实采购仍为 0 台 / ¥0，真实续费仍为 0 次 / ¥0。
 
 ## 9. 停下来报告
 - 任何真实花钱调用前未获确认。
