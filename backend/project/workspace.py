@@ -184,7 +184,7 @@ async def list_projects(workspace_id: str) -> list[ProjectInfo]:
             select(ProjectORM).where(
                 ProjectORM.workspace_id == workspace_id,
                 ProjectORM.is_deleted == False,  # noqa: E712
-            ).order_by(ProjectORM.created_at.asc())
+            ).order_by(ProjectORM.created_at.desc(), ProjectORM.id.desc())
         )).scalars().all()
     out = []
     for r in rows:
