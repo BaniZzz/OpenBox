@@ -8,6 +8,7 @@ export const paths = {
   app: "/app",
   chat: (sessionId: string) => `/app/s/${sessionId}`,
   settings: (tab?: string) => (tab ? `/app/settings/${tab}` : "/app/settings"),
+  billing: (tab?: string) => (tab ? `/app/billing/${tab}` : "/app/billing"),
   cron: "/app/cron",
   skills: "/app/skills",
   resources: (projectId?: string) =>
@@ -19,6 +20,7 @@ export const routePatterns = {
   invite: "/invite/:token",
   chat: "s/:sessionId",
   settings: "settings/:tab?",
+  billing: "billing/:tab?",
   cron: "cron",
   skills: "skills",
   resources: "resources",

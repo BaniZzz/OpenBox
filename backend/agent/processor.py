@@ -488,6 +488,7 @@ async def process_step(
     ctx.available_tools = frozenset(response_executable)
 
     try:
+        ctx.message_id = assistant_info.id
         llm_stream = stream_llm(
             agent_def=agent_def,
             system=system,

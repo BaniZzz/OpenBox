@@ -4,7 +4,6 @@
   "nav": {
     "account": "Account",
     "team": "Team",
-    "usage": "Usage & cost",
     "models": "Models",
     "tools": "Tools & permissions",
     "browser": "Browser",
@@ -13,7 +12,6 @@
   "hint": {
     "account": "Sign-in identity and session.",
     "team": "Workspace members, roles and invitations.",
-    "usage": "Token consumption and cost per chat.",
     "models": "Default model and agent picks.",
     "tools": "Which actions may run without confirmation.",
     "browser": "Choose which browser the agent uses to open web pages.",
@@ -52,16 +50,6 @@
       "suspended": "Suspended",
       "removed": "Removed"
     }
-  },
-  "usage": {
-    "contextUsed": "Current chat context",
-    "totalTokens": "Total tokens",
-    "totalCost": "Total cost",
-    "sessions_one": "{{count}} chat",
-    "sessions_other": "{{count}} chats",
-    "note": "Covers every chat under this account; cost is estimated from model pricing.",
-    "perSession": "Per-chat consumption",
-    "empty": "No consumption recorded yet"
   },
   "models": {
     "defaultModel": "Default model",

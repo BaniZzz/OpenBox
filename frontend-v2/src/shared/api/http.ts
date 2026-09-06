@@ -52,23 +52,30 @@ async function doFetch(path: string, options: RequestInit, token: string | null)
   // left the server with a body it could not parse — an upload came back 422
   // with the file never seen.
   const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData
-  const headers: Record<string, string> = {
-    ...(isFormData ? {} : { "Content-Type": "application/json" }),
-    ...((options.headers as Record<string, string>) ?? {}),
-  }
-  if (token) headers.Authorization = `Bearer ${token}`
-  const workspaceId = useWorkspaceStore.getState().currentId
-  if (workspaceId) headers["X-Workspace-Id"] = workspaceId
+  const headers = new Headers(options.headers)
+  if (!isFormData && !headers.has("Content-Type")) headers.set("Content-Type", "application/json")
+  if (token) headers.set("Authorization", `Bearer ${token}`)
   return fetch(`${env.apiBase}${path}`, { ...options, headers, credentials: "include" })
 }
 
+function scopeRequest(options: RequestInit): RequestInit {
+  const headers = new Headers(options.headers)
+  const workspaceId = useWorkspaceStore.getState().currentId
+  if (workspaceId && !headers.has("X-Workspace-Id")) headers.set("X-Workspace-Id", workspaceId)
+  return { ...options, headers }
+}
+
 export async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const token = useAuthStore.getState().accessToken
+  const { accessToken: token, user } = useAuthStore.getState()
+  // Keep the original workspace through authentication refresh. The user may
+  // switch workspaces while the first request or refresh is in flight.
+  options = scopeRequest(options)
   let res = await doFetch(path, options, token)
 
   if (res.status === 401 && token) {
     const newToken = await refreshAccessToken()
-    if (newToken) res = await doFetch(path, options, newToken)
+    if (newToken && user?.id === useAuthStore.getState().user?.id)
+      res = await doFetch(path, options, newToken)
   }
 
   if (!res.ok) throw await toApiError(res)
@@ -97,12 +104,14 @@ function dispositionFilename(value: string | null): string | null {
 
 /** Authenticated binary download with the same refresh-once behaviour as JSON requests. */
 export async function requestBlob(path: string, options: RequestInit = {}): Promise<BlobResponse> {
-  const token = useAuthStore.getState().accessToken
+  const { accessToken: token, user } = useAuthStore.getState()
+  options = scopeRequest(options)
   let res = await doFetch(path, options, token)
 
   if (res.status === 401 && token) {
     const newToken = await refreshAccessToken()
-    if (newToken) res = await doFetch(path, options, newToken)
+    if (newToken && user?.id === useAuthStore.getState().user?.id)
+      res = await doFetch(path, options, newToken)
   }
 
   if (!res.ok) throw await toApiError(res)
@@ -113,9 +122,13 @@ export async function requestBlob(path: string, options: RequestInit = {}): Prom
 }
 
 export const http = {
-  get: <T>(path: string) => request<T>(path),
-  post: <T>(path: string, body?: unknown) =>
-    request<T>(path, { method: "POST", body: body === undefined ? undefined : JSON.stringify(body) }),
+  get: <T>(path: string, options?: RequestInit) => request<T>(path, options),
+  post: <T>(path: string, body?: unknown, options?: RequestInit) =>
+    request<T>(path, {
+      ...options,
+      method: "POST",
+      body: body === undefined ? undefined : JSON.stringify(body),
+    }),
   put: <T>(path: string, body?: unknown) => request<T>(path, { method: "PUT", body: JSON.stringify(body) }),
   patch: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "PATCH", body: JSON.stringify(body) }),

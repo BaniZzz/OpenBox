@@ -114,9 +114,23 @@ async def ensure_engine(config: Any) -> AsyncEngine:
 
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
+        await connection.run_sync(_upgrade_desktop_billing_columns)
         await connection.run_sync(_seed_single_user_scope)
     log.info(f"Single-user application database at {database_path}")
     return engine
+
+
+def _upgrade_desktop_billing_columns(connection) -> None:
+    """Desktop SQLite uses create_all, which cannot add columns to old orders."""
+    columns = {column["name"] for column in sa.inspect(connection).get_columns("payment_orders")}
+    if "kind" not in columns:
+        connection.exec_driver_sql("ALTER TABLE payment_orders ADD COLUMN kind VARCHAR(24) NOT NULL DEFAULT 'topup'")
+    if "product" not in columns:
+        connection.exec_driver_sql("ALTER TABLE payment_orders ADD COLUMN product TEXT")
+    if "cancelled_at" not in columns:
+        connection.exec_driver_sql("ALTER TABLE payment_orders ADD COLUMN cancelled_at DATETIME")
+    if "cancellation_reason" not in columns:
+        connection.exec_driver_sql("ALTER TABLE payment_orders ADD COLUMN cancellation_reason VARCHAR(32)")
 
 
 def _seed_single_user_scope(connection) -> None:
@@ -176,6 +190,12 @@ def get_engine() -> AsyncEngine:
 # small, explicit list beside the engine avoids reporting a healthy service
 # whose first session query will fail with UndefinedColumnError.
 _READINESS_SCHEMA: dict[str, frozenset[str]] = {
+    "credit_balances": frozenset({"workspace_id", "balance", "updated_at"}),
+    "usage_events": frozenset({"id", "workspace_id", "message_id", "tokens", "credits", "status", "pricing"}),
+    "credit_ledger": frozenset({"id", "workspace_id", "idempotency_key", "amount", "balance_after"}),
+    "payment_orders": frozenset({"id", "workspace_id", "user_id", "request_key", "provider_payment_id", "credits", "status", "kind", "product", "cancelled_at", "cancellation_reason"}),
+    "billing_subscriptions": frozenset({"order_id", "workspace_id", "plan_id", "cycle", "plan", "starts_at", "ends_at"}),
+    "payment_order_requests": frozenset({"workspace_id", "request_key", "order_id"}),
     "sessions": frozenset({"tool_exposure_state"}),
     "parts": frozenset({
         "stream_seq",

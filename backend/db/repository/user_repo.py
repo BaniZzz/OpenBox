@@ -18,6 +18,7 @@ class PgUserRepo:
         from core.identifier import generate_id
         from db.models.project import Project
         from db.models.workspace import Workspace, WorkspaceMember
+        from project.workspace import DEFAULT_NAME, DEFAULT_SLUG
 
         workspace_id = generate_id()
         user = User(id=id, username=username, password_hash=password_hash,
@@ -58,8 +59,8 @@ class PgUserRepo:
                     id=generate_id(),
                     user_id=id,
                     workspace_id=workspace_id,
-                    name="Default",
-                    slug="default",
+                    name=DEFAULT_NAME,
+                    slug=DEFAULT_SLUG,
                     created_at=now,
                     updated_at=now,
                 )

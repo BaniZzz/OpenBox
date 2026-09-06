@@ -1131,6 +1131,14 @@ async def _stream_responses_api(
 
                     etype = data.get("type", "")
 
+                    # Capture provider usage before protocol/content handling can
+                    # fail. Incomplete Responses may still contain billable usage.
+                    raw_usage = (data.get("response") or {}).get("usage")
+                    if raw_usage:
+                        from billing.pricing import normalize_usage
+                        stream_usage = normalize_usage(raw_usage)
+                        yield {"type": "usage", "usage": dict(stream_usage)}
+
                     if etype in {"response.created", "response.completed"}:
                         candidate_response_id = str(
                             (data.get("response") or {}).get("id") or ""
@@ -1282,13 +1290,6 @@ async def _stream_responses_api(
                     # arrives in response.completed.output as a batch.
                     elif etype == "response.completed":
                         resp_data = data.get("response", {})
-                        u = resp_data.get("usage", {})
-                        stream_usage = {
-                            "input": u.get("input_tokens", 0),
-                            "output": u.get("output_tokens", 0),
-                            "total": u.get("total_tokens", 0),
-                            "cache": 0,
-                        }
 
                         # Extract content from response.output for models
                         # that don't stream individual events (e.g. GPT-5.4).
@@ -1342,19 +1343,6 @@ async def _stream_responses_api(
                     exc_info=True,
                 )
         log.info(f"Responses API usage for {model_id}: {stream_usage}")
-
-        # Estimate cost
-        if stream_usage:
-            try:
-                import litellm
-                cost = litellm.completion_cost(
-                    model=model_id,
-                    prompt_tokens=stream_usage.get("input", 0),
-                    completion_tokens=stream_usage.get("output", 0),
-                )
-                stream_usage["cost"] = cost
-            except Exception:
-                stream_usage["cost"] = 0.0
 
         # Yield tool calls
         if tool_calls:
@@ -1432,6 +1420,7 @@ async def stream_llm(
     hooks: Any = None,
     variant: str | None = None,
     tool_choice: str | None = None,
+    billing_kind: str = "chat",
 ) -> AsyncIterator[dict]:
     """Stream LLM responses using LiteLLM.
 
@@ -1445,9 +1434,13 @@ async def stream_llm(
     Note: tool execution is NOT done here. The caller (loop.py) is responsible
     for executing tools via hooks, so it can pass the correct part_id for SSE events.
     """
+    from billing.service import UsageMeter
+    meter = await UsageMeter.start(model_id=model_id, session_id=ctx.session_id,
+        user_id=ctx.user_id, message_id=ctx.message_id, kind=billing_kind)
+    usage = None
     # GPT-5.x models: use Responses API for reasoning content
     if _needs_responses_api(model_id):
-        async for event in _stream_responses_api(
+        stream = _stream_responses_api(
             model_id,
             system,
             messages,
@@ -1459,13 +1452,57 @@ async def stream_llm(
             native_portable_system=ctx._native_portable_system,
             native_record_capability=ctx._native_record_capability,
             native_discovery_state=ctx,
-        ):
+        )
+    else:
+        stream = _stream_litellm_direct(model_id, system, messages, tools, variant=variant, tool_choice=tool_choice)
+    try:
+        async for event in stream:
+            if event["type"] == "usage":
+                usage = event["usage"]
+                continue
+            if event["type"] in {"finish", "error"}:
+                usage = event.get("usage") or usage
+                if meter:
+                    credits = await meter.finish(usage)
+                    if event["type"] == "finish":
+                        event["usage"] = {**(usage or {}), "cost": float(credits or 0),
+                                          "credits": str(credits) if credits is not None else None}
             yield event
-        return
+    finally:
+        try:
+            await stream.aclose()
+        finally:
+            if meter and not meter.finished:
+                # Aborting the consumer must not abandon an already observed charge.
+                settlement = asyncio.create_task(meter.finish(usage))
+                try:
+                    await asyncio.shield(settlement)
+                except asyncio.CancelledError:
+                    await settlement
+                    raise
 
-    # All other models: use LiteLLM Chat Completions
-    async for event in _stream_litellm_direct(model_id, system, messages, tools, variant=variant, tool_choice=tool_choice):
-        yield event
+
+async def metered_completion(*, ctx: ToolContext, billing_kind: str, **kwargs):
+    """The same accounting boundary for title generation and tool-side LLM calls."""
+    import litellm
+    from billing.pricing import normalize_usage
+    from billing.service import UsageMeter
+    meter = await UsageMeter.start(model_id=kwargs["model"], session_id=ctx.session_id,
+        user_id=ctx.user_id, message_id=ctx.message_id, kind=billing_kind)
+    usage = None
+    try:
+        response = await litellm.acompletion(**kwargs)
+        if getattr(response, "usage", None):
+            usage = normalize_usage(response.usage)
+        return response
+    finally:
+        if meter:
+            settlement = asyncio.create_task(meter.finish(usage))
+            try:
+                await asyncio.shield(settlement)
+            except asyncio.CancelledError:
+                await settlement
+                raise
 
 
 def _to_pydantic_messages(messages: list[dict]) -> list:
@@ -1517,29 +1554,8 @@ def _extract_cache_tokens(usage_obj: Any) -> int:
     - Anthropic: cache_read_input_tokens + cache_creation_input_tokens
     - OpenAI/Azure: prompt_tokens_details.cached_tokens (read only, write is automatic)
     """
-    cache_read = 0
-    cache_write = 0
-
-    # Anthropic direct: cache_read_input_tokens / cache_creation_input_tokens
-    val = getattr(usage_obj, "cache_read_input_tokens", None)
-    if val:
-        cache_read = int(val)
-    val = getattr(usage_obj, "cache_creation_input_tokens", None)
-    if val:
-        cache_write = int(val)
-
-    # OpenAI / Azure / LiteLLM proxy: prompt_tokens_details.cached_tokens
-    if not cache_read:
-        ptd = getattr(usage_obj, "prompt_tokens_details", None)
-        if ptd:
-            cached = getattr(ptd, "cached_tokens", None) if not isinstance(ptd, dict) else ptd.get("cached_tokens")
-            if cached:
-                cache_read = int(cached)
-            creation = getattr(ptd, "cache_creation_tokens", None) if not isinstance(ptd, dict) else ptd.get("cache_creation_tokens")
-            if creation:
-                cache_write = int(creation)
-
-    return cache_read + cache_write
+    from billing.pricing import normalize_usage
+    return normalize_usage(usage_obj)["cache"]
 
 
 def _extract_chunk_usage(chunk: Any, target: dict) -> None:
@@ -1547,32 +1563,15 @@ def _extract_chunk_usage(chunk: Any, target: dict) -> None:
     usage = getattr(chunk, "usage", None)
     if not usage:
         return
-    # Only update if we get non-zero values
-    prompt = getattr(usage, "prompt_tokens", 0) or 0
-    completion = getattr(usage, "completion_tokens", 0) or 0
-    total = getattr(usage, "total_tokens", 0) or 0
-    if prompt or completion or total:
-        target["input"] = prompt
-        target["output"] = completion
-        target["total"] = total or (prompt + completion)
-        target["cache"] = _extract_cache_tokens(usage)
+    _extract_chunk_usage_from_obj(usage, target)
 
 
 def _extract_chunk_usage_from_obj(usage: Any, target: dict) -> None:
     """Extract usage from any usage-like object (dict or object with attrs)."""
-    if isinstance(usage, dict):
-        prompt = usage.get("prompt_tokens", 0) or 0
-        completion = usage.get("completion_tokens", 0) or 0
-        total = usage.get("total_tokens", 0) or 0
-    else:
-        prompt = getattr(usage, "prompt_tokens", 0) or 0
-        completion = getattr(usage, "completion_tokens", 0) or 0
-        total = getattr(usage, "total_tokens", 0) or 0
-    if prompt or completion or total:
-        target["input"] = prompt
-        target["output"] = completion
-        target["total"] = total or (prompt + completion)
-        target["cache"] = _extract_cache_tokens(usage) if not isinstance(usage, dict) else (usage.get("cache_read_input_tokens", 0) or 0) + (usage.get("cache_creation_input_tokens", 0) or 0)
+    from billing.pricing import normalize_usage
+    normalized = normalize_usage(usage)
+    if normalized["total"]:
+        target.update(normalized)
 
 
 def _finalize_message(msg: dict) -> dict:
@@ -1708,6 +1707,8 @@ async def _stream_litellm_direct(
             # With stream_options={"include_usage": True}, the provider sends a
             # final chunk with choices=[] and usage filled.
             _extract_chunk_usage(chunk, stream_usage)
+            if getattr(chunk, "usage", None) and stream_usage:
+                yield {"type": "usage", "usage": dict(stream_usage)}
 
             delta = chunk.choices[0].delta if chunk.choices else None
             if not delta:
@@ -1769,17 +1770,9 @@ async def _stream_litellm_direct(
 
         log.info(f"Stream usage for {model_id}: {stream_usage}")
 
-        # Estimate cost using LiteLLM's pricing data
+        # Usage also arrives through LiteLLM's post-stream fallback on some routes.
         if stream_usage:
-            try:
-                cost = litellm.completion_cost(
-                    model=model_id,
-                    prompt_tokens=stream_usage.get("input", 0),
-                    completion_tokens=stream_usage.get("output", 0),
-                )
-                stream_usage["cost"] = cost
-            except Exception:
-                stream_usage["cost"] = 0.0
+            yield {"type": "usage", "usage": dict(stream_usage)}
 
         # Yield tool calls for the caller to execute
         if tool_calls:

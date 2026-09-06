@@ -56,13 +56,13 @@ async def _judge_idle_command(
     recent_output: str,
     idle_seconds: int,
     total_seconds: int,
+    ctx: ToolContext | None = None,
 ) -> str:
     """Ask LLM whether an idle command should be killed or kept waiting.
 
     Returns: "kill", "wait", or "success".
     """
-    import litellm
-    from agent.llm import _get_provider_kwargs
+    from agent.llm import _get_provider_kwargs, metered_completion
     from core.config import get_config
 
     config = get_config()
@@ -86,7 +86,8 @@ Reply with one word only: wait, kill, or success"""
     log.info(f"[LLM Judge] Calling model={model_id} for command='{command[:60]}' idle={idle_seconds}s total={total_seconds}s")
 
     try:
-        response = await litellm.acompletion(
+        response = await metered_completion(
+            ctx=ctx or ToolContext(), billing_kind="bash_judge",
             model=model_id,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=10,
@@ -149,6 +150,7 @@ async def execute(args: BashArgs, ctx: ToolContext) -> ToolResult:
                     recent_output=collected_output[-2000:],
                     idle_seconds=chunk.idle_seconds,
                     total_seconds=chunk.total_seconds,
+                    ctx=ctx,
                 )
                 log.info(f"LLM idle judgment: {decision}")
 

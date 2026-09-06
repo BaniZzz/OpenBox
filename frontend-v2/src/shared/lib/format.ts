@@ -48,5 +48,19 @@ export function formatDuration(seconds: number): string {
 }
 
 export function formatCost(usd: number): string {
-  return new Intl.NumberFormat(locale(), { style: "currency", currency: "USD", maximumFractionDigits: 3 }).format(usd)
+  return new Intl.NumberFormat(locale(), {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 3,
+  }).format(usd)
+}
+
+/** Presentation only; settlement uses server-side Decimal and returns strings. */
+export function formatCredits(value: string | number | null | undefined): string {
+  if (value == null) return "—"
+  const n = Number(value)
+  if (!Number.isFinite(n)) return "—"
+  return new Intl.NumberFormat(locale(), {
+    maximumFractionDigits: Math.abs(n) < 0.001 ? 12 : 6,
+  }).format(n)
 }

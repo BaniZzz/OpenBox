@@ -7,6 +7,7 @@ import { toast } from "@/shared/ui/Toast"
 import { useWorkspaceUi } from "../stores/ui"
 import { useProjectsQuery } from "../api/projects"
 import { useSessionsQuery } from "../api/sessions"
+import { paths } from "@/shared/router/paths"
 
 interface TopbarProps {
   panelOpen: boolean
@@ -29,6 +30,8 @@ export function Topbar({ panelOpen, onTogglePanel, statusSlot }: TopbarProps) {
   const isSettings = location.pathname.includes("/settings")
   const isCron = location.pathname.includes("/cron")
   const isResources = location.pathname.includes("/resources")
+  const isBilling =
+    location.pathname === paths.billing() || location.pathname.startsWith(`${paths.billing()}/`)
   const session = useMemo(
     () => (sessions.data ?? []).find((s) => s.id === sessionId) ?? null,
     [sessions.data, sessionId],
@@ -40,13 +43,15 @@ export function Topbar({ panelOpen, onTogglePanel, statusSlot }: TopbarProps) {
 
   // Pages that are not a conversation name themselves; everything else is a
   // chat, and falls back to its title and project.
-  const standalone = isSettings
-    ? { title: t("settings"), subtitle: t("settings:subtitle", { ns: "settings" }) }
-    : isCron
-      ? { title: t("scheduledTasks"), subtitle: t("scheduledTasksHint") }
-      : isResources
-        ? { title: t("resourceCenter"), subtitle: t("resourceCenterHint") }
-        : null
+  const standalone = isBilling
+    ? { title: t("billing"), subtitle: "" }
+    : isSettings
+      ? { title: t("settings"), subtitle: t("settings:subtitle", { ns: "settings" }) }
+      : isCron
+        ? { title: t("scheduledTasks"), subtitle: t("scheduledTasksHint") }
+        : isResources
+          ? { title: t("resourceCenter"), subtitle: t("resourceCenterHint") }
+          : null
   const title = standalone?.title ?? session?.title ?? t("untitledChat")
   const subtitle = standalone?.subtitle ?? project?.name ?? t("unsorted")
 
@@ -60,7 +65,7 @@ export function Topbar({ panelOpen, onTogglePanel, statusSlot }: TopbarProps) {
       {collapsed && (
         <button
           type="button"
-          className="flex size-8 flex-none items-center justify-center rounded-full text-n700 hover:bg-n200"
+          className="text-n700 hover:bg-n200 flex size-8 flex-none items-center justify-center rounded-full"
           onClick={toggleSidebar}
           title={t("expand")}
           aria-label={t("expand")}
@@ -70,13 +75,13 @@ export function Topbar({ panelOpen, onTogglePanel, statusSlot }: TopbarProps) {
       )}
       <div className="flex min-w-0 flex-1 items-baseline gap-2.5 overflow-hidden">
         <span className="max-w-3/5 flex-none truncate text-lg font-medium">{title}</span>
-        <span className="min-w-0 flex-none truncate text-sm text-n600">{subtitle}</span>
+        <span className="text-n600 min-w-0 flex-none truncate text-sm">{subtitle}</span>
       </div>
-      {!isSettings && !isResources && statusSlot}
+      {!isSettings && !isResources && !isBilling && statusSlot}
       {session && (
         <button
           type="button"
-          className="flex size-8 flex-none items-center justify-center rounded-full text-n700 hover:bg-hairsoft"
+          className="text-n700 hover:bg-hairsoft flex size-8 flex-none items-center justify-center rounded-full"
           title={t("share")}
           aria-label={t("share")}
           onClick={share}
@@ -87,7 +92,7 @@ export function Topbar({ panelOpen, onTogglePanel, statusSlot }: TopbarProps) {
       {!panelOpen && !standalone && (
         <button
           type="button"
-          className="flex size-8 flex-none items-center justify-center rounded-full text-n700 hover:bg-n200"
+          className="text-n700 hover:bg-n200 flex size-8 flex-none items-center justify-center rounded-full"
           onClick={onTogglePanel}
           title={t("openPanel")}
           aria-label={t("openPanel")}

@@ -13,7 +13,10 @@ export function useWorkspaceEvents() {
 
   useEffect(() => {
     void wsClient.connect()
-    const invalidate = () => void qc.invalidateQueries({ queryKey: workspaceKeys.sessions(userId, workspaceId) })
+    const invalidate = () => {
+      void qc.invalidateQueries({ queryKey: workspaceKeys.sessions(userId, workspaceId) })
+      void qc.invalidateQueries({ queryKey: ["billing", userId, workspaceId] })
+    }
     const subs = [
       wsClient.on("session.status", invalidate),
       wsClient.on("session.title", invalidate),

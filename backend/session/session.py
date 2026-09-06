@@ -421,6 +421,9 @@ async def update_session_tokens(session_id: str, step_tokens: TokenUsage, user_i
     cu.cache += step_tokens.cache
     cu.total += step_tokens.total or (step_tokens.input + step_tokens.output)
     cu.cost += step_tokens.cost
+    if step_tokens.credits is not None:
+        from decimal import Decimal
+        cu.credits = str(Decimal(cu.credits or "0") + Decimal(step_tokens.credits))
 
     # Context window = last step's total tokens (input + output), matching opencode's isOverflow
     cu.context = step_tokens.total or (step_tokens.input + step_tokens.output)

@@ -18,6 +18,20 @@ Logto SSO 的取值另见 [LOGTO_PROD.md](LOGTO_PROD.md)。
 | 源码 | 有 `/opt/openbox/src`（git checkout），可就地构建 | **无源码**，镜像从外部装载 |
 | 沙箱 | `SANDBOX_PROVIDER=wuying` | `SANDBOX_PROVIDER=wuying` |
 
+### 2026-09-06：阿里云积分与支付宝发布
+
+- 发布目标为 **`https://ai.bossipai.com.cn` / `i-uf66pcsepxpc23v5qsts`**。
+- 前后端镜像：`20260906-billing-fleet-aaf1fff`，代码提交 `aaf1fff`，本地构建 `linux/amd64` 后传入服务器。
+- 此版本合并积分/支付宝代码与阿里云原有 `60a7d59` 桌面池代码；不能用只包含 billing 的旧镜像覆盖该环境。
+- 数据库由 `a3f1e5c7d9b2` 升至合并版本 `e2f4a6b8c0d2`。先在数据库副本验证，原用户、工作空间、对话、项目、桌面和桌面池数据保持一致。
+- 保留 `WUYING_MODE=per_user`、`WUYING_ROUTING=per_desktop`、`POOL_ENABLED=false`、`POOL_AUTO_PURCHASE=false` 及所有原运行配置。9 条桌面记录与归属关系保留；未执行真实桌面关机/开机操作。
+- 支付通知为 `https://ai.bossipai.com.cn/api/billing/webhooks/alipay`，支付返回为 `/app/billing/orders`。密钥独立放在服务器 `secrets/alipay/`，以只读方式挂载，未打入镜像。
+- 当前按用户要求保留专业版 **0.10 元**、旗舰版 **0.20 元**测试价格；`BILLING_MODE=shadow`，模型用量记账但不扣余额。
+- 验证：前端 205 项、后端相关 195 项测试通过；公网前端与构建产物一致，支付宝真实签名查询成功，公网回调拒绝无效签名。尚未实际付款。
+- 配置和数据库备份位于服务器 `/opt/openbox/backups/20260906-billing-fleet-aaf1fff/`。新增 billing 表后回退旧镜像时，不要直接执行旧镜像的 `alembic upgrade head`；旧镜像不能识别新迁移编号。
+
+AWS 在目标纠正前已更新到 `20260906-billing-9bfb283`，本次阿里云发布没有回退该更新。两边配置、数据库和支付通知域名各自独立。
+
 请求链路（两边一致）：
 
 ```

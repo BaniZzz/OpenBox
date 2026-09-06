@@ -251,7 +251,7 @@ async def _chunked_summarize(
 
         summary_text = ""
         try:
-            ctx = ToolContext(session_id=session_id)
+            ctx = ToolContext(session_id=session_id, user_id=user_id)
             async for event in stream_llm(
                 agent_def=None,
                 system=[],
@@ -259,6 +259,7 @@ async def _chunked_summarize(
                 tools={},
                 model_id=chunk_model,
                 ctx=ctx,
+                billing_kind="compaction_chunk",
             ):
                 if event["type"] == "text_delta":
                     summary_text += event.get("text", "")
@@ -389,7 +390,7 @@ async def process_compaction(
     await save_part(text_part, is_new=True, user_id=user_id)
 
     # Call LLM with no tools
-    ctx = ToolContext(session_id=session_id)
+    ctx = ToolContext(session_id=session_id, user_id=user_id, message_id=assistant.id)
     summary_text = ""
     stream_usage: dict = {}
     llm_error = False
@@ -402,6 +403,7 @@ async def process_compaction(
             tools={},
             model_id=model_id,
             ctx=ctx,
+            billing_kind="compaction",
         ):
             if event["type"] == "text_delta":
                 summary_text += event["text"]
@@ -449,24 +451,20 @@ async def process_compaction(
             output=stream_usage.get("output", 0),
             cache=stream_usage.get("cache", 0),
             total=stream_usage.get("total", 0),
+            cost=stream_usage.get("cost", 0),
+            credits=stream_usage.get("credits"),
         )
     await update_message_info(assistant, user_id=user_id)
 
-    # Reset session token_usage after compaction.
-    # The cumulative totals are reset to zero so the progress bar reflects
-    # post-compaction state. context = compaction output's input tokens
-    # (the actual context size the LLM will see next).
-    from session.session import update_session, get_session
+    # Compaction changes the context window, never erases lifetime consumption.
+    from session.session import update_session, get_session, update_session_tokens
+    if assistant.tokens:
+        await update_session_tokens(session_id, assistant.tokens, user_id=user_id)
     session = await get_session(session_id, user_id=user_id)
     context_limit = get_model_context_limit(session.model if session else "") if session else 200_000
-    compaction_tokens = TokenUsage(
-        input=0,
-        output=0,
-        cache=0,
-        total=0,
-        limit=context_limit,
-        context=stream_usage.get("total", 0) or (stream_usage.get("input", 0) + stream_usage.get("output", 0)),
-    )
+    compaction_tokens = (session.token_usage if session else None) or TokenUsage()
+    compaction_tokens.limit = context_limit
+    compaction_tokens.context = stream_usage.get("output", 0)
     await update_session(session_id, token_usage=compaction_tokens, user_id=user_id)
 
     # Broadcast updated token_usage so frontend refreshes

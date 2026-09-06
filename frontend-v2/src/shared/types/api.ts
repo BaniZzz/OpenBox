@@ -11,6 +11,7 @@ export interface TokenUsage {
   total: number
   limit: number
   cost: number
+  credits?: string | null
   context: number
 }
 

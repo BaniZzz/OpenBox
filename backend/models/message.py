@@ -38,6 +38,7 @@ class TokenUsage(BaseModel):
     total: int = 0
     limit: int = 0
     cost: float = 0.0
+    credits: str | None = None  # Exact credit amount; billing ledger is authoritative.
     context: int = 0  # Current context window usage (last step's input tokens)
 
 
@@ -143,6 +144,7 @@ class StepFinishPart(BaseModel):
     input_tokens: int = 0
     output_tokens: int = 0
     cost: float = 0.0
+    credits: str | None = None
     duration: float = 0.0
     session_id: str = ""
     message_id: str = ""

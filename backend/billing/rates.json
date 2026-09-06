@@ -1,0 +1,41 @@
+{
+  "version": "2026-09-05.2",
+  "verified_at": "2026-09-05",
+  "credits_per_cny": "1",
+  "usd_cny": "6.7787",
+  "fx_date": "2026-09-04",
+  "fx_source": "https://www.safe.gov.cn/AppStructured/hlw/RMBQuery.do",
+  "sources": {
+    "openai": "https://developers.openai.com/api/docs/pricing",
+    "anthropic": "https://platform.claude.com/docs/en/about-claude/pricing",
+    "deepseek": "https://api-docs.deepseek.com/zh-cn/quick_start/pricing/",
+    "qwen": "https://help.aliyun.com/zh/model-studio/model-pricing",
+    "google": "https://ai.google.dev/gemini-api/docs/pricing"
+  },
+  "models": {
+    "gpt-5.6-sol": {"vendor": "openai", "currency": "USD", "conversion": "gpt_numeric_1_to_1", "input": "4", "output": "20", "cache_read": "0.4", "cache_write": "5", "long_context_above": 272000},
+    "gpt-5.6-terra": {"vendor": "openai", "currency": "USD", "conversion": "gpt_numeric_1_to_1", "input": "2", "output": "12", "cache_read": "0.2", "cache_write": "2.5", "long_context_above": 272000},
+    "gpt-5.6-luna": {"vendor": "openai", "currency": "USD", "conversion": "gpt_numeric_1_to_1", "input": "0.2", "output": "1.2", "cache_read": "0.02", "cache_write": "0.25", "long_context_above": 272000},
+    "gpt-5.5": {"vendor": "openai", "currency": "USD", "conversion": "gpt_numeric_1_to_1", "input": "5", "output": "30", "cache_read": "0.5", "long_context_above": 272000},
+    "gpt-5.4": {"vendor": "openai", "currency": "USD", "conversion": "gpt_numeric_1_to_1", "input": "2.5", "output": "15", "cache_read": "0.25", "long_context_above": 272000},
+    "gpt-5.4-mini": {"vendor": "openai", "currency": "USD", "conversion": "gpt_numeric_1_to_1", "input": "0.75", "output": "4.5", "cache_read": "0.075"},
+    "claude-opus-5": {"vendor": "anthropic", "currency": "USD", "input": "5", "output": "25", "cache_read": "0.5", "cache_write": "6.25", "cache_write_1h": "10"},
+    "claude-opus-4-8": {"vendor": "anthropic", "currency": "USD", "input": "5", "output": "25", "cache_read": "0.5", "cache_write": "6.25", "cache_write_1h": "10"},
+    "claude-opus-4-7": {"vendor": "anthropic", "currency": "USD", "input": "5", "output": "25", "cache_read": "0.5", "cache_write": "6.25", "cache_write_1h": "10"},
+    "claude-opus-4-6": {"vendor": "anthropic", "currency": "USD", "input": "5", "output": "25", "cache_read": "0.5", "cache_write": "6.25", "cache_write_1h": "10"},
+    "claude-sonnet-5": {"vendor": "anthropic", "currency": "USD", "input": "2", "output": "10", "cache_read": "0.2", "cache_write": "2.5", "cache_write_1h": "4"},
+    "claude-sonnet-4-6": {"vendor": "anthropic", "currency": "USD", "input": "3", "output": "15", "cache_read": "0.3", "cache_write": "3.75", "cache_write_1h": "6"},
+    "claude-fable-5": {"vendor": "anthropic", "currency": "USD", "input": "10", "output": "50", "cache_read": "1", "cache_write": "12.5", "cache_write_1h": "20"},
+    "claude-haiku-4-5-20251001": {"vendor": "anthropic", "currency": "USD", "input": "1", "output": "5", "cache_read": "0.1", "cache_write": "1.25", "cache_write_1h": "2"},
+    "deepseek-v4-flash": {"vendor": "deepseek", "currency": "CNY", "input": "1.5", "output": "4.5", "cache_read": "0.05", "peak_multiplier": "2"},
+    "deepseek-v4-pro": {"vendor": "deepseek", "currency": "CNY", "input": "4.5", "output": "13.5", "cache_read": "0.15", "peak_multiplier": "2"},
+    "qwen3.8-max": {"vendor": "qwen", "currency": "CNY", "region": "cn-beijing", "input": "12", "output": "36", "cache_read": "1.5", "cache_read_explicit": "1", "cache_write": "15", "source": "https://help.aliyun.com/zh/model-studio/qwen3-8-max"},
+    "qwen3.8-flash": {"vendor": "qwen", "currency": "CNY", "region": "cn-beijing", "input": "0.8", "output": "2.7", "cache_read": "0.1", "cache_read_explicit": "0.1", "cache_write": "1.25", "source": "https://help.aliyun.com/zh/model-studio/qwen3-8-flash"},
+    "gemini-3.7-flash": {"vendor": "google", "currency": "USD", "input": "0.75", "output": "3.75", "cache_read": "0.075", "valid_until": "2026-12-31"}
+  },
+  "aliases": {"gpt-5.6": "gpt-5.6-sol", "qwen3.8-max-0902": "qwen3.8-max", "claude-haiku-4-5": "claude-haiku-4-5-20251001"},
+  "unpriced": {
+    "deepseek-chat": "Official alias retired on 2026-07-24; configure the gateway's exact model mapping before charging.",
+    "deepseek-reasoner": "Official alias retired on 2026-07-24; configure the gateway's exact model mapping before charging."
+  }
+}
