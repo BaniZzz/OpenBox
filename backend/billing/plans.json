@@ -1,10 +1,10 @@
 {
-  "version": "bossip-2026-09-05",
+  "version": "openbox-2026-09-07",
   "currency": "CNY",
   "plans": [
     { "id": "free", "prices_fen": { "monthly": 0, "yearly": 0 }, "credits": "10", "credit_period": "weekly", "recommended": false },
-    { "id": "pro", "prices_fen": { "monthly": 59900, "yearly": 718800 }, "credits": "280", "credit_period": "monthly", "recommended": true },
-    { "id": "max", "prices_fen": { "monthly": 210000, "yearly": 2520000 }, "credits": "1680", "credit_period": "monthly", "recommended": false }
+    { "id": "pro", "prices_fen": { "monthly": 49900, "yearly": 598800 }, "credits": "280", "credit_period": "monthly", "recommended": true },
+    { "id": "max", "prices_fen": { "monthly": 199900, "yearly": 2398800 }, "credits": "1680", "credit_period": "monthly", "recommended": false }
   ],
   "topup": { "min_amount_fen": 100, "max_amount_fen": 10000000, "presets_fen": [1000, 5000, 10000, 50000], "credits_per_yuan": "1" }
 }
