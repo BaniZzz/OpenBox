@@ -305,6 +305,11 @@ def create_app() -> FastAPI:
 
     application.include_router(agent_router)
 
+    # ── Deployment environment (public; feeds the UI badge) ──
+    @application.get("/api/environment")
+    async def environment():
+        return {"name": get_config().app_env}
+
     # ── Health check ──
     @application.get("/health")
     async def health():

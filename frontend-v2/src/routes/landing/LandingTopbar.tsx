@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next"
 import { BrandMark, LangPill } from "@/features/auth"
 import { useStart } from "./useStart"
+import { EnvBadge } from "@/shared/ui/EnvBadge"
 
 /** Sticky landing header: brand, section labels, language toggle, CTAs. */
 export function LandingTopbar() {
@@ -13,6 +14,7 @@ export function LandingTopbar() {
     <header className="sticky top-0 z-20 flex-none border-b border-hair bg-bg/85 backdrop-blur-md">
       <div className="mx-auto flex h-15.5 max-w-[1080px] items-center gap-3 px-7">
         <BrandMark dot />
+        <EnvBadge />
         <nav className="flex flex-1 justify-center gap-6.5">
           <span className="whitespace-nowrap text-sm text-n700">{nav.product}</span>
           <span className="whitespace-nowrap text-sm text-n700">{nav.how}</span>
