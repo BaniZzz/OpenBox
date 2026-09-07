@@ -5,7 +5,35 @@
 
 Logto SSO 的取值另见 [LOGTO_PROD.md](LOGTO_PROD.md)。
 
-## 当前生产版本：2026-09-07 舰队页显示实时 ECD 绑定用户
+## 当前生产版本：2026-09-07 用户视频模型强约束
+
+- 阿里云 gw2 已部署统一标签 `20260907-video-model-acbc1b2`，源码提交为
+  `acbc1b2`。后端 `linux/amd64` 镜像 ID 为
+  `sha256:14d53bf01a2e21ccb87fc86b293dea0e0bef6dd9cb970236843ba6def7035300`；
+  前端没有代码变化，沿用上一版 image ID
+  `sha256:d787f253315811ad34b272fcd0e6a889380e7a15cdc4dcc3927465bf9b001364`
+  并只追加统一标签。
+- 修复生产实锤的静默换模型：会话已选 `MiniMax-H3 / 720p`，Agent 却显式用
+  `doubao-seedance-2-0-260128 / 1080p` 报价并付费提交。现在
+  `sessions.video_model/video_resolution` 是工具层强约束；Agent 参数不一致会在任何
+  provider 请求和扣费前拒绝，省略参数则精确继承用户选择。工具 Schema、实际视频
+  SKILL、model-guide 和 C5 偏差记录同步更新。
+- 生产零费用复测直接复用原事故会话：豆包覆盖请求返回 `VideoRequestError`，省略
+  参数解析为 `MiniMax-H3 / 720p`。新增 4 项强约束测试、视频选择存储测试及舰队相关
+  12 项测试通过；整套测试剩余的 5 项私有视频配置基线失败与上一版本记录一致，WS
+  套件顺序污染项单独重跑通过。
+- Logto 用户 `andrewwang`（`01M1PC7RCXXJWQFZZX2HVCCY2H`）的 OpenBox 全局角色
+  已从 `user` 提升为 `admin`，默认空间角色仍为 `owner`。舰队权限读取 OpenBox access
+  JWT，不读取 Logto 控制台角色；需刷新 token 或重新登录，旧 access token 最长 15
+  分钟失效。
+- 本次没有数据库迁移，发布后仍为 `f3a5b7c9d1e4 (head)`；四个 compose 服务均
+  healthy，公网首页与 Logto config 为 200，匿名舰队接口为 401。有效备份在
+  `/opt/openbox/backups/20260907-video-model-acbc1b2/activation-101224/`，数据库 dump
+  SHA-256 为
+  `f73c41084a2a3664b74d111fad95d2450171d29dbfe4d9f683a48336a66334cb`；
+  回滚标签为 `20260907-a3-1c242da`。
+
+## 上一生产版本：2026-09-07 舰队页显示实时 ECD 绑定用户
 
 - 阿里云 gw2 已部署统一标签 `20260907-a3-1c242da`，源码提交为
   `1c242da`。后端镜像 ID 为
