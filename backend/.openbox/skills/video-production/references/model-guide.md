@@ -5,6 +5,14 @@ ratios, duration ranges and which extras each model accepts. **Read it there.**
 The relay publishes no model list of its own, so the registry is the only
 description that exists, and a copy in this file would drift.
 
+If the output contains `person_selected_model=<id>`, the person has already
+chosen. That model and the composer resolution are authoritative, even when a
+different entry looks cheaper, faster, or appears first in the registry. If the
+choice cannot satisfy the request, explain the exact capability conflict and
+ask the person to switch it in the composer; never submit a substitute. The
+recommendations below apply only when there is no person-selected model, or
+when the person explicitly asks for help choosing one.
+
 What the registry cannot tell you:
 
 | Situation | Choose |

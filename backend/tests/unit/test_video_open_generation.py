@@ -11,9 +11,12 @@ import pytest
 from pydantic import ValidationError
 
 from core.config import VideoGenerationConfig, VideoModelConfig
-from tool import video_providers
-from tool.video_production import VideoGenerateArgs, VideoInputRef, _model_capability_lines
-
+from tool import video_production, video_providers
+from tool.video_production import (
+    VideoGenerateArgs,
+    VideoInputRef,
+    _model_capability_lines,
+)
 
 WAN3 = VideoModelConfig(
     id="wan3.0-video",
@@ -167,6 +170,96 @@ def test_estimate_needs_no_idempotency_key():
     args = VideoGenerateArgs(action="estimate", prompt="一只猫")
 
     assert args.idempotency_key is None
+
+
+def test_model_schema_tells_the_agent_the_persons_pick_is_authoritative():
+    model_schema = VideoGenerateArgs.model_json_schema()["properties"]["model"]
+
+    assert "authoritative" in model_schema["description"]
+    assert "Never silently substitute" in model_schema["description"]
+
+
+def _selected_preferences(monkeypatch, *, model="MiniMax-H3", resolution="720p"):
+    config = type(
+        "C",
+        (),
+        {
+            "video_generation": VideoGenerationConfig(
+                model="wan3.0-video",
+                default_resolution="720p",
+                models=[
+                    VideoModelConfig(
+                        id="MiniMax-H3", channel="sd2", resolutions=["720p", "1080p"]
+                    ),
+                    VideoModelConfig(
+                        id="doubao-seedance-2-0-260128",
+                        channel="ark",
+                        resolutions=["720p", "1080p"],
+                    ),
+                ],
+            )
+        },
+    )()
+
+    async def selected_model(_ctx):
+        return model
+
+    async def selected_resolution(_ctx):
+        return resolution
+
+    monkeypatch.setattr("core.config.get_config", lambda: config)
+    monkeypatch.setattr(video_production, "_session_video_model_id", selected_model)
+    monkeypatch.setattr(video_production, "_session_video_resolution", selected_resolution)
+    return object()
+
+
+@pytest.mark.asyncio
+async def test_person_selected_model_cannot_be_silently_overridden(monkeypatch):
+    ctx = _selected_preferences(monkeypatch)
+    args = VideoGenerateArgs(
+        action="estimate",
+        prompt="小狗玩球",
+        model="doubao-seedance-2-0-260128",
+    )
+
+    with pytest.raises(video_providers.VideoRequestError, match="authoritative.*MiniMax-H3"):
+        await video_production._resolve_open_submission(args, ctx)
+
+
+@pytest.mark.asyncio
+async def test_person_selected_resolution_cannot_be_silently_overridden(monkeypatch):
+    ctx = _selected_preferences(monkeypatch)
+    args = VideoGenerateArgs(
+        action="estimate",
+        prompt="小狗玩球",
+        model="MiniMax-H3",
+        resolution="1080p",
+    )
+
+    with pytest.raises(video_providers.VideoRequestError, match="resolution.*720p"):
+        await video_production._resolve_open_submission(args, ctx)
+
+
+@pytest.mark.asyncio
+async def test_omitted_video_preferences_use_the_persons_exact_selection(monkeypatch):
+    ctx = _selected_preferences(monkeypatch)
+
+    approved = await video_production._resolve_open_submission(
+        VideoGenerateArgs(action="estimate", prompt="小狗玩球"), ctx
+    )
+
+    assert approved["model"] == "MiniMax-H3"
+    assert approved["resolution"] == "720p"
+
+
+@pytest.mark.asyncio
+async def test_incompatible_person_selected_resolution_is_refused_not_substituted(monkeypatch):
+    ctx = _selected_preferences(monkeypatch, resolution="480p")
+
+    with pytest.raises(video_providers.VideoRequestError, match="no substitute"):
+        await video_production._resolve_open_submission(
+            VideoGenerateArgs(action="estimate", prompt="小狗玩球"), ctx
+        )
 
 
 def test_duplicate_override_is_explicit():

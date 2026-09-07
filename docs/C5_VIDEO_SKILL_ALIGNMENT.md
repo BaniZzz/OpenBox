@@ -123,6 +123,13 @@ bossip 之所以把一切做成硬闸，是因为他们的模型（qwen）会冲
 | U8 | 字幕现状说明：ffmpeg + libass 烧录 ASS（`build_ass.py` + `compose.sh`），HyperFrames 已随媒体 worker 退役，**不要**重新引入 | 文档层注明 |
 | U9 | **用户选的模型是创作前提，不是可覆盖的默认**：前端 composer 选的视频模型与分辨率存在会话上（`sessions.video_model/video_resolution`），`video_generate(action="models")` 的输出第二行会给 `person_selected_model=<id>`，`submit`/`estimate` 不传 `model` 时也用它。技能要求：① 第 0 步读模型表后，**以 `person_selected_model` 的时长上限与分辨率档做拆段与 `plan_shots` 的边界**（Seedance 单段 ≤15s≈55 字，Wan 3.0 ≤30s，SD 档按注册表）；② 拆段卡里明写「按你选的 <模型> <分辨率> 规划」；③ 只有选定模型做不了这稿（单段超上限、720p SD 档拒视频参考、模型不支持所需素材）时，在拆段卡里**提议**换模型并说明原因，由用户点选，**绝不静默换模型或换档**；④ 用户中途在前端换了模型，重新读模型表、重新拆段、重出拆段卡（视同改稿链）。没选模型时用注册表默认并在卡里说明 | SKILL.md 步骤 0/3/6；`model-guide.md` 加「以选定模型为准」段 |
 
+> **2026-09-07 生产回归与补强**：会话已保存 `MiniMax-H3 / 720p`，`models`
+> 也正确返回 `person_selected_model=MiniMax-H3`，但 Agent 在 01:12 的
+> `estimate` 与付费 `submit` 中显式传入 `doubao-seedance-2-0-260128 / 1080p`，
+> 后端按“工具参数优先”接受并完成了错误模型任务。说明 U9 不能只依赖技能纪律：
+> 工具层现同步把会话选择设为强约束，显式模型或分辨率不一致时在付费前拒绝；工具
+> Schema、实际 SKILL 与 model-guide 同步写明规则，并以这条事故参数补回归测试。
+
 **不在 C5、已另行安排的**：轮询后台化与任务完成唤醒会话（工具层）、工具调用刷屏折叠（前端）、成片预览与素材库（队友）。
 
 ---

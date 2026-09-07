@@ -113,8 +113,23 @@ class VideoGenerateArgs(BaseModel):
     #: Describe the shot. Supplying it means an open generation.
     prompt: str | None = Field(default=None, min_length=1, max_length=32_000)
     #: An id from action="models". Omitted uses the person's chosen model.
-    model: str | None = Field(default=None, max_length=160)
-    resolution: Literal["480p", "720p", "1080p"] | None = None
+    model: str | None = Field(
+        default=None,
+        max_length=160,
+        description=(
+            "An id from action=models. If person_selected_model is present, that "
+            "composer choice is authoritative: omit this field or pass the exact "
+            "same id. Never silently substitute another model."
+        ),
+    )
+    resolution: Literal["480p", "720p", "1080p"] | None = Field(
+        default=None,
+        description=(
+            "Output resolution. If the person selected a resolution in the composer, "
+            "omit this field or pass that exact value; changing it requires the person "
+            "to update the composer selection first."
+        ),
+    )
     ratio: str | None = Field(default=None, max_length=16)
     #: Seconds, or -1 to let the model choose.
     duration: int | None = Field(default=None, ge=-1, le=300)
@@ -1547,7 +1562,16 @@ async def _resolve_open_submission(args: VideoGenerateArgs, ctx: ToolContext) ->
 
     config = get_config()
     settings = config.video_generation
-    model = (args.model or "").strip() or await _session_video_model_id(ctx)
+    requested_model = (args.model or "").strip()
+    selected_model = await _session_video_model_id(ctx)
+    if selected_model and requested_model and requested_model != selected_model:
+        raise _RequestError(
+            f"model '{requested_model}' does not match the person's authoritative "
+            f"composer selection '{selected_model}'. Use '{selected_model}' or omit "
+            "model. To switch models, ask the person to change the video model in "
+            "the composer first; never substitute one silently."
+        )
+    model = selected_model or requested_model
     declared = video_providers.declared_model(model, config) if model else None
 
     # A caller that populates every schema field sends the zero value for an
@@ -1557,13 +1581,27 @@ async def _resolve_open_submission(args: VideoGenerateArgs, ctx: ToolContext) ->
     seed = args.seed or None
     duration_arg = args.duration or None
 
-    resolution = args.resolution or await _session_video_resolution(ctx)
+    requested_resolution = (args.resolution or "").strip()
+    selected_resolution = await _session_video_resolution(ctx)
+    if (
+        selected_resolution
+        and requested_resolution
+        and requested_resolution != selected_resolution
+    ):
+        raise _RequestError(
+            f"resolution '{requested_resolution}' does not match the person's "
+            f"authoritative composer selection '{selected_resolution}'. Use "
+            f"'{selected_resolution}' or omit resolution. To switch resolution, ask "
+            "the person to change it in the composer first; never substitute one silently."
+        )
+    resolution = selected_resolution or requested_resolution
     allowed = list(getattr(declared, "resolutions", None) or [])
     if resolution and allowed and resolution not in allowed:
-        # The composer pick belongs to whichever model was selected with it.
-        # Switching model can strand it, and silently generating at another
-        # tier bills a different price for a different picture.
-        resolution = ""
+        raise _RequestError(
+            f"model '{model or settings.model}' does not support resolution "
+            f"'{resolution}'. Supported resolutions: {', '.join(allowed)}. Change "
+            "the model or resolution in the composer; no substitute was selected."
+        )
     if not resolution:
         resolution = allowed[0] if len(allowed) == 1 else settings.default_resolution
         if allowed and resolution not in allowed:
@@ -1603,8 +1641,9 @@ async def _resolve_open_submission(args: VideoGenerateArgs, ctx: ToolContext) ->
 async def _session_video_resolution(ctx: ToolContext) -> str:
     """The resolution tier picked in the composer, if any.
 
-    Like the model pick, a convenience rather than a precondition: any failure
-    to read it falls through to the model's own default.
+    When present this is authoritative for the request. A storage read failure
+    still falls through to the model's own default so an infrastructure issue
+    does not make all video generation unavailable.
     """
     try:
         from db.base import get_db_session
@@ -1624,8 +1663,9 @@ async def _session_video_resolution(ctx: ToolContext) -> str:
 async def _session_video_model_id(ctx: ToolContext) -> str:
     """The video model the person picked in the composer, if any.
 
-    The pick is a convenience, never a precondition: any failure to read it
-    falls through to the configured default rather than blocking a request.
+    When present this is authoritative for the request. A storage read failure
+    still falls through to the configured default so an infrastructure issue
+    does not make all video generation unavailable.
     """
     try:
         from db.base import get_db_session
@@ -2696,7 +2736,10 @@ Generate video. This is the only way to create one, and it works on its own: \
 describe the shot in `prompt`, optionally naming model, resolution, ratio, \
 duration, audio, seed and reference assets, and pass an idempotency_key. \
 Use action="models" to read what each model accepts (the registry is the only \
-description of that) and action="estimate" to validate a request for free \
+description of that). A returned `person_selected_model` and the person's \
+composer resolution are authoritative: omit those fields or repeat them \
+exactly, and never silently choose another model or tier. Use action="estimate" \
+to validate a request for free \
 before paying. A finished video lands in OSS and, when a sandbox is present, \
 in the workspace for ffmpeg editing; action="fetch" re-delivers any owned \
 video asset there. \
@@ -2731,4 +2774,3 @@ video_transcribe_tool = define_tool(
     sandbox_required=False,
     parallel_safe=True,
 )
-

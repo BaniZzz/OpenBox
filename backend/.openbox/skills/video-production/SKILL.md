@@ -53,6 +53,12 @@ while everything else says 480p/720p/1080p. Ask, do not assume.
    anything. Steps 3 and 6 both need each model's limits, and a plan made
    without them is a plan that gets refused at submit.
 
+   If the menu contains `person_selected_model=<id>`, that is the person's
+   decision, not a recommendation. Use that exact model and the resolution
+   selected in the composer. Only when the chosen model cannot satisfy a
+   requested capability may you explain the conflict and ask the person to
+   switch it in the composer. Never silently replace either choice.
+
 1. **Read the creator.** `creator_context(action="get_user_context")` before
    drafting — voice, audience, boundaries. Empty is normal; carry on.
 2. **Write the whole script first, in the person's voice.** Natural narration
@@ -100,9 +106,11 @@ while everything else says 480p/720p/1080p. Ask, do not assume.
 5. **Write one prompt per shot** using `references/prompt-recipes.md`. Check each
    with `python3 "$S/lint_prompt.py" --prompt-file shot1.txt --script "…"
    --anchor "…"`, then read what it says — it advises, it never blocks.
-6. **Pick the model deliberately.** `video_generate(action="models")` is the only
-   description of what each one accepts; `references/model-guide.md` covers the
-   trade-offs. Use `action="estimate"` to validate a shot for free before paying.
+6. **Honor the person's model deliberately.** When `person_selected_model` is
+   present, plan and submit with that exact model; omit `model` to let the tool
+   apply it safely. The same rule applies to the composer resolution. Only when
+   no choice exists may you use `references/model-guide.md` to select from the
+   registry. Use `action="estimate"` to validate a shot for free before paying.
 7. **Generate every shot at once.** One `video_generate(action="submit")` per
    shot, each with a distinct `idempotency_key` (`<slug>:shot<N>:v1`) **and its
    `shot=<N>`** — concurrent shots finish out of order, and without that number
