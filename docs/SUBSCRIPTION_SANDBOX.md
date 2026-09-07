@@ -1,6 +1,6 @@
 # 付费后自动开通无影云 / Free 普通对话
 
-本次实现适用于 `SANDBOX_PROVIDER=wuying`、`WUYING_ROUTING=per_desktop`（线上同时设置 `WUYING_MODE=per_user`）。工作空间是套餐和云电脑的归属边界，空间成员共享空间权益。本文覆盖此前“用户先手动开通桌面才能聊天”的行为；积分价格与模型计费规则不在本次改动范围。
+本次实现适用于 `SANDBOX_PROVIDER=wuying`、`WUYING_ROUTING=per_desktop`（线上同时设置 `WUYING_MODE=per_user`）。工作空间是套餐和云电脑的归属边界，空间成员共享空间权益。本文覆盖此前“用户先手动开通桌面才能聊天”的行为；生命周期机制不调整积分额度与模型计费规则。2026-09-07 合并时，另按用户要求将所有付费套餐月付/年付总价临时统一为 ¥0.10，见 [套餐测试价说明](CREDIT_BILLING.md)；云厂商费用不随测试价降低。
 
 ## 用户行为
 

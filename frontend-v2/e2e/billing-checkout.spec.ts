@@ -28,7 +28,8 @@ test("subscription immediately shows a modal, blocks double clicks and survives 
           recordCheckoutDeparture: (state: { path: string; modalOpen: boolean }) => Promise<void>
         }
       ).recordCheckoutDeparture
-      void report({ path: window.location.pathname, modalOpen: !!document.querySelector("dialog")?.open })
+      // The desktop activation dialog also stays mounted while closed.
+      void report({ path: window.location.pathname, modalOpen: !!document.querySelector("dialog[open]") })
     })
   })
   await page.route("**/api/billing/orders", async (route) => {

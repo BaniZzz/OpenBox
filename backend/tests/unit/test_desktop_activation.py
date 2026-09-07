@@ -69,13 +69,14 @@ async def account(monkeypatch):
 
 async def order_for(account, *, kind="subscription", paid=True):
     plan = plan_catalog().plan("pro")
+    amount_fen = plan.prices_fen["monthly"] if kind == "subscription" else 49900
     order_id = uuid4().hex
     async with get_db_session() as db:
         db.add(PaymentOrder(id=order_id, workspace_id=account.workspace_id, user_id=account.user_id,
-            provider="test", request_key=uuid4().hex, amount_fen=49900, currency="CNY", kind=kind,
+            provider="test", request_key=uuid4().hex, amount_fen=amount_fen, currency="CNY", kind=kind,
             product={"plan": plan.model_dump(mode="json"), "cycle": "monthly"} if kind == "subscription" else None,
             credits=plan.credits, status="pending", created_at=account.clock[0]))
-    receipt = PaidReceipt(order_id=order_id, payment_id=uuid4().hex, amount_fen=49900, currency="CNY", status="paid")
+    receipt = PaidReceipt(order_id=order_id, payment_id=uuid4().hex, amount_fen=amount_fen, currency="CNY", status="paid")
     if paid:
         await payments.settle_payment("test", receipt)
     return receipt

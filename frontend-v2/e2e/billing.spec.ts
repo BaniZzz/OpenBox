@@ -45,7 +45,7 @@ test("Alipay defaults, immediate checkout and persisted order recovery", async (
   const pro = page.getByRole("article", { name: "专业版", exact: true })
   const max = page.getByRole("article", { name: "旗舰版", exact: true })
   await expect(pro).toContainText("¥0.1")
-  await expect(max).toContainText("¥0.2")
+  await expect(max).toContainText("¥0.1")
   const channels = page.getByRole("group", { name: "支付渠道" })
   await expect(channels.getByRole("button", { name: "支付宝", exact: true })).toHaveAttribute(
     "aria-pressed",
@@ -163,13 +163,17 @@ test("free workspaces can choose yearly plans and only gain paid benefits after 
   await page.goto("/app/billing/purchase")
   const pro = page.getByRole("article", { name: "专业版", exact: true })
   const max = page.getByRole("article", { name: "旗舰版", exact: true })
-  await expect(pro).toContainText("¥599")
+  await expect(
+    page.getByRole("article", { name: "免费版", exact: true }).getByText("¥0", { exact: true }),
+  ).toBeVisible()
+  await expect(pro).toContainText("¥0.1")
   await expect(pro).toContainText("每月 280 积分")
-  await expect(max).toContainText("¥2,100")
+  await expect(max).toContainText("¥0.1")
+  await expect(max).toContainText("每月 1,680 积分")
   await expect(page.getByRole("button", { name: "充值", exact: true })).toHaveCount(0)
   await page.getByRole("button", { name: "年付", exact: true }).click()
-  await expect(pro).toContainText("¥7,188")
-  await expect(max).toContainText("¥25,200")
+  await expect(pro).toContainText("¥0.1")
+  await expect(max).toContainText("¥0.1")
   await page.screenshot({ path: info.outputPath("plans-desktop.png") })
   await page.setViewportSize({ width: 635, height: 805 })
   expect(await page.locator("body").evaluate((el) => el.scrollWidth <= window.innerWidth)).toBe(true)
