@@ -1,4 +1,31 @@
 {
+  "activation": {
+    "title": "Preparing your cloud desktop",
+    "ready": "Your cloud desktop is ready",
+    "readyHint": "You can now use sandbox tools or open the cloud desktop from the sidebar.",
+    "hint": "Payment confirmed. Your desktop is being prepared automatically. You can keep chatting or close this page; setup continues and its saved progress returns when you reopen it.",
+    "attention": "Desktop setup needs verification",
+    "attentionHint": "The cloud purchase outcome is unclear. We are looking for the original desktop and will not buy a duplicate. Please contact an administrator to verify the cloud order.",
+    "retrying": "Setup could not finish yet. The server will retry automatically. You do not need to pay again.",
+    "reconnecting": "Reconnecting to get the latest status. The last saved progress is shown above.",
+    "retryFailed": "The retry request failed. Try again later; the background task will continue.",
+    "viewProgress": "Cloud desktop · View setup progress",
+    "progress": "Setup progress",
+    "close": "Close setup progress",
+    "continueChat": "Keep chatting",
+    "done": "Got it",
+    "retry": "Retry now",
+    "subscriptionRequired": "Cloud desktops require a paid plan",
+    "subscriptionHint": "Free users can continue ordinary LLM conversations. A paid plan automatically enables the sandbox. After expiry, your desktop is retained and reused on renewal if it still exists in the cloud.",
+    "subscribe": "View plans",
+    "steps": {
+      "paid": "Payment confirmed",
+      "assigning": "Assign or create desktop",
+      "starting": "Start desktop",
+      "connecting": "Verify sandbox connection",
+      "ready": "Ready to use"
+    }
+  },
   "tabs": {
     "new": "New tab",
     "review": "Review",

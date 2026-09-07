@@ -18,6 +18,24 @@ cd mobile && flutter run --dart-define=API_BASE=http://localhost:8080
 
 本地联调账号:`devtest / devtest1234`。API 地址通过 `--dart-define=API_BASE=…` 覆盖；默认值为生产 `https://ai.bossipai.com.cn`，避免安装包误连设备自己的 localhost。
 
+### 2026-09-07：订阅开通与阿里云联调
+
+本轮 iOS 模拟器构建显式连接阿里云（HTTPS/WSS 同源），不连接 AWS 或本机后端：
+
+```bash
+cd mobile
+flutter build ios --simulator --debug \
+  --dart-define=API_BASE=https://ai.bossipai.com.cn \
+  --dart-define=WEB_BASE=https://ai.bossipai.com.cn
+```
+
+- Free 可继续普通对话；云桌面、终端、浏览器和文件入口显示订阅提示，不再提供旧的手动创建沙箱按钮。
+- 付款确认后由后端自动准备云电脑；全局开通弹窗读取持久化进度，退出页面/切到后台不会取消任务，回前台重新查询。
+- 侧栏“云桌面”可直接打开已有云电脑，不必先创建对话。SDK ticket、状态、就绪确认按账号和工作空间隔离。
+- 订阅到期或切换作用域时停止当前 SDK 查看连接并撤掉工具面板；不会关机、删除或释放原云电脑。
+- 套餐价格只读后端目录，当前 Pro/Max 月付和年付总价均为 0.10 元。阿里云 `APP_ENV=prod` 不会自动恢复原价。
+- 模拟器可验证页面、状态和云桌面连接，但不会执行真实支付；支付宝原生客户端唤起仍须在安装支付宝的真机上测试。
+
 ## 单点登录(Logto)
 
 登录/注册两屏由 `SsoGate` 接管,走 [`logto_dart_sdk`](https://pub.dev/packages/logto_dart_sdk):
@@ -79,7 +97,7 @@ iOS 无需额外 SSO 配置(ASWebAuthenticationSession 直接吃 callbackUrlSche
 | 右侧 WorkbenchPanel(菜单 tab + 审阅/终端/浏览器/文件/云桌面/定时) | 路由 `/app/w/:sessionId` = **菜单页**(`WorkbenchScreen` + `WorkbenchMenu`,与 web `MenuTab` 同一份入口与实时提示);点一行 push `WorkbenchSurfacePage` —— 手机没有 tab 条,返回手势和返回箭头就是 web 那条 tab 条的替代 |
 | DesktopTab(Wuying Web SDK) | `desktop_bridge.dart`(SDK 引导页 + JS 桥)+ `desktop_tab.dart`(Flutter UI)。原生轮询 `/api/desktop/ticket`(202→task_id 重试),WebView 装载 SDK,JS channel 回报 connected/error。**桌面固定 1920×1080**:客户端用 `uiConfig.fixedResolution`/`maxResolution` 锁住分辨率 —— 手机的视口一直在变(旋转/全屏/键盘),不锁住 SDK 会反过来把远端分辨率改掉,agent 看的桌面就在它脚下变形了;iframe **直接定尺**而不是 CSS transform 缩放,变换过的画面会让 SDK 观测到与手指落点不同的坐标系。**横屏全屏**:`SystemChrome` 切 landscape + `immersiveSticky`,`onImmersive` 回调让 `WorkbenchSurfacePage` 摘掉 AppBar(不 push 新路由 —— 重新挂载 WebView 会把流打断);退出/dispose 都恢复竖屏。**指针**:`setMouseMode('Client')` 绝对坐标,手指点哪就点哪(相对模式需要指针锁定,WebView 给不了,实测点击直接失效,所以不提供)。**键盘**:`session.openSoftKeyboard(true)` 打开 SDK 自带的画面内键盘 —— 这是文字进 guest 的唯一通道,带 Esc/F1-F12/Ctrl/Alt 和切 guest 输入法的 中/En 键 |
 | BrowserTab(dev-browser 截图流) | `browser_tab.dart`:原生 WS 客户端,JPEG 帧 → `Image.memory`(gapless),点击/滚动映射回页面像素坐标,4004 → 无沙箱 |
-| `EmptyChatRoute` | 空会话直接发送首条消息，由后端按当前 workspace 自动解析/连接执行环境；不显示旧 Docker 时代的“创建沙箱”卡。无影未开通或通道未就绪时以 `DESKTOP_NOT_READY` 打开云桌面引导 |
+| `EmptyChatRoute` | 空会话直接发送首条消息，Free 或开通中均不阻断普通 LLM 对话；不显示旧 Docker 时代的“创建沙箱”卡。真正需要 sandbox 的工具由后端返回权限/未就绪错误，移动端用对应文案展示 |
 | Composer 的 ReasoningPicker(思考强度) | `utils/reasoning.dart`(纯函数 `resolveReasoning`,判定与 web hook 逐条一致)+ `picker_sheets.dart` 的 `showReasoningPicker`;只有声明了 variants 的模型才出这个胶囊。Dart 没有 `undefined`,所以用 `Variant?` 包装三态:**不传**=保留会话已存的强度,**`Variant(null)`**=显式清空回模型默认,**`Variant('high')`**=本轮用这一档 |
 | Composer 的 `/`、`@` 提及菜单 | `utils/mention.dart`(触发规则逐条移植)+ `mention_menu.dart`;文件搜索 160ms 防抖,技能/命令同款分组;资源段由 app 层经 `ComposerResourceSlot` 注入(特性之间不互相 import) |
 | 资源中心(`features/resources`,三栏) | `/app/resources`(`ResourcesScreen`):项目 chip + 来源 chip 折叠成两行筛选条,详情页 `ResourceDetailPage` 取代第三栏(图片/视频/音频/文本预览、改名/下载/删除);下载留在 App 内并调系统保存面板,长按出操作单,`+` 走 `file_picker` 直传 OSS |

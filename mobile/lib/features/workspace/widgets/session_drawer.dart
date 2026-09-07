@@ -175,6 +175,14 @@ class _SessionDrawerState extends ConsumerState<SessionDrawer> {
                   context.push(Paths.billing());
                 },
               ),
+              _NavRow(
+                icon: Icons.desktop_windows_outlined,
+                label: i18n.t('workbench:tabs.desktop'),
+                onTap: () {
+                  Navigator.pop(context);
+                  context.push(Paths.desktop);
+                },
+              ),
               const SizedBox(height: 4),
               Expanded(
                 child: data == null

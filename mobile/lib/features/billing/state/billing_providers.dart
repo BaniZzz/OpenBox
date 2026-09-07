@@ -4,6 +4,7 @@ import 'dart:math';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../shared/events/bus.dart';
 import '../../../shared/models/billing.dart';
 import '../../workspace/state/active_workspace_store.dart';
 import '../api/billing_api.dart';
@@ -172,6 +173,7 @@ String newPaymentRequestKey() {
 }
 
 void invalidateBilling(WidgetRef ref) {
+  ref.read(appEventBusProvider).emit('billing.changed');
   ref.invalidate(billingBalanceProvider);
   ref.invalidate(billingPlansProvider);
   ref.invalidate(billingSubscriptionProvider);

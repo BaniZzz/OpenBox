@@ -3,11 +3,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../features/workbench/widgets/desktop_activation_host.dart';
 import '../features/workspace/state/active_workspace_store.dart';
 import '../features/workspace/state/workspace_store.dart';
 import '../shared/api/auth_store.dart';
 import '../shared/appearance/tokens.dart';
 import '../shared/i18n/i18n.dart';
+import '../shared/models/workspace.dart';
 import '../shared/utils/error_text.dart';
 import '../shared/ws/ws_client.dart';
 
@@ -52,7 +54,13 @@ class WorkspaceBootstrap extends ConsumerWidget {
               message: ref.watch(i18nProvider).t('errors:WORKSPACE_FORBIDDEN'),
               onRetry: () => ref.invalidate(activeWorkspaceProvider),
             )
-          : child,
+          : DesktopActivationHost(
+              key: ValueKey((auth.userId, data.currentId)),
+              scope: (userId: auth.userId, workspaceId: data.currentId!),
+              workspaceName: data.current?.name ?? '',
+              canManage: data.current?.role.canManage ?? false,
+              child: child,
+            ),
     );
   }
 }

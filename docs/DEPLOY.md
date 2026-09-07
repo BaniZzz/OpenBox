@@ -5,7 +5,25 @@
 
 Logto SSO 的取值另见 [LOGTO_PROD.md](LOGTO_PROD.md)。
 
-## 当前生产版本：2026-09-07 环境角标与 10:22 短暂 502 复盘
+## 当前生产配置：2026-09-07 切换 prod 环境标识
+
+- 按用户确认，将阿里云 gw2 的 `/opt/openbox/config/backend.env` 中
+  `APP_ENV=staging` 改为 `APP_ENV=prod`。公网 `/api/environment` 已返回
+  `{"name":"prod"}`，浏览器刷新后不再显示“内测环境”角标。前端在页面会话中缓存
+  环境值，已打开的页面需要刷新。后续发布应保留 `APP_ENV=prod`。
+- 当前前后端镜像统一标签为 `20260907-subscription-129e758`，源码提交为
+  `129e758`，包含订阅驱动的无影云自动开通及统一测试价格。本次仅修改环境标识，
+  未重建镜像；专业版、旗舰版的月付和年付总价仍均为 **0.10 元**，免费版仍为 0 元。
+  `BILLING_MODE=shadow`、访问控制、订阅、积分与桌面配置均未改动。
+- 切换前的配置与数据库备份位于
+  `/opt/openbox/backups/20260907-env-prod/activation-20260907T043314Z/`。
+  12:33:15 至 12:33:36（北京时间）仅重建 backend，健康后 reload 前端 Nginx；
+  frontend、postgres、redis 容器未重建，四个服务均 healthy，数据库 revision 仍为
+  `a4b6c8d0e2f5`。仅回退本次配置时恢复该备份的 `config/backend.env`，再执行
+  `docker compose up -d --no-deps backend`；等待 healthy 后 reload 前端 Nginx，
+  不需要回退镜像或恢复数据库。
+
+## 上一生产版本：2026-09-07 环境角标与 10:22 短暂 502 复盘
 
 - 阿里云 gw2 当前统一标签为 `20260907-main-33edc66`，源码提交为
   `33edc66`（包含此前 `acbc1b2` 的视频模型强约束）。后端 image ID 为
@@ -114,10 +132,10 @@ Logto SSO 的取值另见 [LOGTO_PROD.md](LOGTO_PROD.md)。
 
 > **环境定位（2026-09-07 拍板）**
 > - **AWS（`ai.ueejavelin.org`）= 开发环境**：给开发者自测，随时可能重部署、重置数据，不承诺可用性；执行面走上海共享桌面（`WUYING_MODE=shared`）。
-> - **阿里云 gw2（`ai.bossipai.com.cn`）= 半生产的测试环境**：由内部运营做产品测试，数据与桌面池按生产标准管理（备份、迁移、回滚、告警），但**尚未对外开放**；对外正式上线另行宣布。
+> - **阿里云 gw2（`ai.bossipai.com.cn`）= 生产环境标识（`APP_ENV=prod`）**：2026-09-07 用户测试确认后切换；数据与桌面池按生产标准管理（备份、迁移、回滚、告警）。当前付费套餐仍使用 0.10 元测试价格，计费模式仍为 `shadow`；环境标识切换不自动修改价格或访问控制。
 > 两边都从 `main` 构建；先发 AWS 再发 gw2，gw2 部署前看一眼 `.env` 当前 tag，避免互相覆盖。
 
-| | 开发（AWS） | 半生产测试（阿里云） |
+| | 开发（AWS） | 生产标识（阿里云） |
 |---|---|---|
 | 域名 | https://ai.ueejavelin.org | https://ai.bossipai.com.cn |
 | 主机 | EC2 `i-0eaae88c8b67d9bb5` `OpenClaw-NewAPI` | ECS `i-uf66pcsepxpc23v5qsts` `openbox-gw2-sh` |

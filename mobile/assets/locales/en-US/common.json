@@ -51,5 +51,11 @@
     "thisYearDateTime": "{{date}} {{time}}",
     "fullDateTime": "{{date}} {{time}}"
   },
-  "close": "Close"
+  "close": "Close",
+  "env": {
+    "dev": "Dev",
+    "devHint": "Development environment; data may be reset at any time",
+    "staging": "Staging",
+    "stagingHint": "Internal test environment, not yet public"
+  }
 }
