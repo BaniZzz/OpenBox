@@ -22,6 +22,9 @@ class _FixedWorkspaceController extends WorkspaceController {
 
 I18nBundle _bundle() => I18nBundle({
   'zh-CN': {
+    'workbench': {
+      'tabs': {'desktop': '云桌面'},
+    },
     'workspace': {
       'newProject': '新建项目',
       'search': '搜索',
@@ -72,5 +75,6 @@ void main() {
     final long = tester.getCenter(find.byKey(const ValueKey('new-chat-long')));
     expect(short.dx, long.dx);
     expect(find.byTooltip('新建对话'), findsNWidgets(2));
+    expect(find.text('云桌面'), findsOneWidget);
   });
 }

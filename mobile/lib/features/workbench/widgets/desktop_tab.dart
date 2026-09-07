@@ -8,67 +8,117 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../../shared/api/api_error.dart';
-import '../../../shared/api/providers.dart';
+import '../../../shared/api/auth_store.dart';
+import '../../../shared/api/desktop_api.dart';
 import '../../../shared/appearance/tokens.dart';
 import '../../../shared/appearance/type_scale.dart';
 import '../../../shared/i18n/i18n.dart';
+import '../../../shared/models/desktop.dart';
 import '../../../shared/models/json.dart';
 import '../../../shared/models/workspace.dart';
+import '../../../shared/utils/error_text.dart';
 import '../../../shared/widgets/spinner.dart';
 import '../../workspace/state/active_workspace_store.dart';
-import '../api/workbench_api.dart';
 import 'desktop_bridge.dart';
+import 'desktop_subscription_notice.dart';
 
-enum _Phase { loading, connected, error, closed, provision, provisionFailed }
+enum _Phase {
+  loading,
+  connected,
+  error,
+  closed,
+  pending,
+  attention,
+  subscriptionRequired,
+}
 
-/// 云桌面 tab (web `DesktopTab.tsx`): the sandbox's Wuying cloud desktop.
-/// The Web SDK is JS-only, so mobile hosts the same bootstrap in a WebView
-/// ([desktopBootstrapHtml]); the one-time ticket (202-pending polled) is
-/// fetched natively. Read-only by default — taking the pointer is an explicit
-/// toggle, and no machine ids ever reach the UI.
-///
-/// Two things a phone needs that the desktop client does not: landscape
-/// fullscreen, without which a 1920×1080 stream is unreadable, and the
-/// desktop's own on-stream keyboard, because the phone's keyboard cannot
-/// reach the guest.
-class DesktopTab extends ConsumerStatefulWidget {
+/// A scope change unmounts the old SDK, its outstanding tickets and expiry timer.
+class DesktopTab extends ConsumerWidget {
   const DesktopTab({super.key, this.onImmersive});
-
-  /// Raised while the viewer is in landscape fullscreen so the hosting page
-  /// can drop its app bar. The WebView keeps its place in the tree either way
-  /// — re-parenting it would tear the stream down and reconnect.
   final ValueChanged<bool>? onImmersive;
 
   @override
-  ConsumerState<DesktopTab> createState() => _DesktopTabState();
+  Widget build(BuildContext context, WidgetRef ref) {
+    final user = ref.watch(authProvider).user;
+    final workspace = ref.watch(activeWorkspaceProvider).valueOrNull?.current;
+    if (user == null || workspace == null) {
+      return const Center(child: Spinner());
+    }
+    final scope = (userId: user.id, workspaceId: workspace.id);
+    return ScopedDesktopViewer(
+      key: ValueKey(scope),
+      scope: scope,
+      canManage: workspace.role.canManage,
+      onImmersive: onImmersive,
+    );
+  }
 }
 
-class _DesktopTabState extends ConsumerState<DesktopTab> {
+/// Native ticket transport + Wuying Web SDK. Opening the viewer is read-only:
+/// provisioning belongs to the payment-triggered, durable backend activation.
+class ScopedDesktopViewer extends ConsumerStatefulWidget {
+  const ScopedDesktopViewer({
+    super.key,
+    required this.scope,
+    required this.canManage,
+    this.onImmersive,
+  });
+  final DesktopScope scope;
+  final bool canManage;
+  final ValueChanged<bool>? onImmersive;
+
+  @override
+  ConsumerState<ScopedDesktopViewer> createState() => _DesktopViewerState();
+}
+
+class _DesktopViewerState extends ConsumerState<ScopedDesktopViewer>
+    with WidgetsBindingObserver {
   _Phase _phase = _Phase.loading;
   String _detail = '';
   bool _control = false;
   bool _fullscreen = false;
   bool _keyboard = false;
   bool _alive = true;
+  bool _connecting = false;
+  bool _retrying = false;
   int _generation = 0;
-  String _channelState = '';
-  Timer? _channelTimer;
+  DesktopStatus? _status;
+  Timer? _expiryTimer;
+  CancelToken? _ticketCancel;
   WebViewController? _webView;
 
   @override
   void initState() {
     super.initState();
-    unawaited(_connect());
+    WidgetsBinding.instance.addObserver(this);
+    ref.listenManual(desktopStatusProvider(widget.scope), (_, next) {
+      if (!_alive) return;
+      next.whenData(_onStatus);
+      if (next.hasError && _webView == null && !_connecting) {
+        setState(() {
+          _phase = _Phase.error;
+          _detail = errorText(ref.read(i18nProvider), next.error!);
+        });
+      }
+    }, fireImmediately: true);
   }
 
   @override
   void dispose() {
     _alive = false;
-    _generation += 1;
-    _channelTimer?.cancel();
-    // Leaving mid-fullscreen must not strand the rest of the app sideways.
+    WidgetsBinding.instance.removeObserver(this);
+    _expiryTimer?.cancel();
+    _dropViewer();
     if (_fullscreen) unawaited(_restoreChrome());
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      if (_status != null && !_status!.hasAccess) _suspend();
+      ref.invalidate(desktopStatusProvider(widget.scope));
+    }
   }
 
   Future<void> _restoreChrome() async {
@@ -76,18 +126,92 @@ class _DesktopTabState extends ConsumerState<DesktopTab> {
     await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   }
 
-  bool _isCurrent(int generation) => _alive && generation == _generation;
+  bool _isCurrent(int generation) =>
+      _alive && generation == _generation && (_status?.hasAccess ?? false);
 
-  /// Poll `/api/desktop/ticket` after provisioning has reached running.
-  Future<Map<String, dynamic>> _fetchTicket(int generation) async {
-    final dio = ref.read(apiDioProvider);
-    var taskId = '';
+  void _dropViewer() {
+    _generation += 1;
+    _connecting = false;
+    _ticketCancel?.cancel();
+    _ticketCancel = null;
+    final controller = _webView;
+    _webView = null;
+    _control = false;
+    _keyboard = false;
+    if (controller != null) unawaited(_stopViewer(controller));
+  }
+
+  Future<void> _stopViewer(WebViewController controller) async {
+    try {
+      await controller.runJavaScript(jsStopDesktop);
+      await controller.loadRequest(Uri.parse('about:blank'));
+    } catch (_) {
+      // Removing the platform view is the fallback if its JS context is gone.
+    }
+  }
+
+  void _suspend() {
+    _dropViewer();
+    if (!_alive) return;
+    if (_fullscreen) {
+      _fullscreen = false;
+      widget.onImmersive?.call(false);
+      unawaited(_restoreChrome());
+    }
+    setState(() {
+      _phase = _Phase.subscriptionRequired;
+      _detail = '';
+    });
+  }
+
+  void _onStatus(DesktopStatus status) {
+    _status = status;
+    _expiryTimer?.cancel();
+    if (!status.hasAccess) {
+      _suspend();
+      return;
+    }
+    final expires = status.subscriptionEndsAt;
+    if (expires != null) {
+      _expiryTimer = Timer(expires.difference(DateTime.now()), () {
+        if (!_alive) return;
+        _suspend();
+        ref.invalidate(desktopStatusProvider(widget.scope));
+      });
+    }
+    if (!status.ready) {
+      _dropViewer();
+      setState(() {
+        _phase = status.needsAttention || status.state == 'failed'
+            ? _Phase.attention
+            : _Phase.pending;
+        _detail = '';
+      });
+      return;
+    }
+    if (_webView == null &&
+        !_connecting &&
+        [
+          _Phase.loading,
+          _Phase.pending,
+          _Phase.attention,
+          _Phase.subscriptionRequired,
+        ].contains(_phase)) {
+      unawaited(_connect());
+    } else {
+      setState(() {});
+    }
+  }
+
+  Future<Map<String, dynamic>> _fetchTicket(
+    int generation,
+    CancelToken cancel,
+  ) async {
+    String? taskId;
     for (var attempt = 0; attempt < 30 && _isCurrent(generation); attempt++) {
-      final resp = await dio.get<Map<String, dynamic>>(
-        '/api/desktop/ticket',
-        queryParameters: taskId.isEmpty ? null : {'task_id': taskId},
-      );
-      final data = resp.data ?? const {};
+      final data = await ref
+          .read(desktopApiProvider)
+          .ticket(widget.scope, taskId: taskId, cancel: cancel);
       if (asString(data['ticket']) != null) return data;
       taskId = asString(data['taskId']) ?? taskId;
       await Future<void>.delayed(const Duration(seconds: 3));
@@ -95,75 +219,17 @@ class _DesktopTabState extends ConsumerState<DesktopTab> {
     throw TimeoutException('desktop ticket');
   }
 
-  Future<void> _waitDesktopRunning(int generation) async {
-    final api = ref.read(workbenchApiProvider);
-    for (var attempt = 0; attempt < 120 && _isCurrent(generation); attempt++) {
-      final status = await api.desktopStatus();
-      if (!_isCurrent(generation)) return;
-      _setChannel(status.channel?.state ?? '');
-      if (status.state == 'running') return;
-      if (status.state == 'failed') {
-        throw _ProvisionFailed(status.error ?? '');
-      }
-      if (status.state == 'not_provisioned') {
-        throw const _NotProvisioned();
-      }
-      setState(() {
-        _detail = ref
-            .read(i18nProvider)
-            .t(
-              status.state == 'assigning'
-                  ? 'workbench:desktop.assigning'
-                  : 'workbench:desktop.provisioning',
-            );
-      });
-      await Future<void>.delayed(const Duration(seconds: 5));
-    }
-    if (_isCurrent(generation)) throw TimeoutException('desktop provision');
-  }
-
   Future<void> _connect() async {
+    if (_connecting || !(_status?.ready ?? false)) return;
+    _connecting = true;
     final generation = ++_generation;
-    _channelTimer?.cancel();
+    final cancel = _ticketCancel = CancelToken();
+    setState(() {
+      _phase = _Phase.loading;
+      _detail = '';
+    });
     try {
-      // An older/shared backend may not expose status; ticket remains the
-      // authoritative fallback in that case.
-      try {
-        final status = await ref.read(workbenchApiProvider).desktopStatus();
-        if (!_isCurrent(generation)) return;
-        _setChannel(status.channel?.state ?? '');
-        if (status.state == 'not_provisioned' && status.mode == 'per_user') {
-          setState(() => _phase = _Phase.provision);
-          return;
-        }
-        if (status.state == 'failed') {
-          throw _ProvisionFailed(status.error ?? '');
-        }
-        if (status.state.isNotEmpty &&
-            status.state != 'running' &&
-            status.state != 'not_provisioned') {
-          setState(() {
-            _detail = ref
-                .read(i18nProvider)
-                .t(
-                  status.state == 'assigning'
-                      ? 'workbench:desktop.assigning'
-                      : 'workbench:desktop.provisioning',
-                );
-          });
-          await _waitDesktopRunning(generation);
-        }
-      } on _ProvisionFailed {
-        rethrow;
-      } on _NotProvisioned {
-        rethrow;
-      } on TimeoutException {
-        rethrow;
-      } catch (_) {
-        // Status is a progressive enhancement for shared/older deployments.
-      }
-
-      final ticket = await _fetchTicket(generation);
+      final ticket = await _fetchTicket(generation, cancel);
       if (!_isCurrent(generation)) return;
       final controller = WebViewController();
       await controller.setJavaScriptMode(JavaScriptMode.unrestricted);
@@ -185,105 +251,97 @@ class _DesktopTabState extends ConsumerState<DesktopTab> {
               case 'connected':
                 _phase = _Phase.connected;
                 _detail = '';
-                _startChannelPolling(generation);
               case 'disconnected':
                 _phase = _Phase.closed;
-                _channelTimer?.cancel();
               case 'error':
                 _phase = _Phase.error;
-                _channelTimer?.cancel();
-                final detail = asString(data['detail']) ?? '';
-                _detail = detail == 'sdk'
-                    ? ref.read(i18nProvider).t('workbench:desktop.sdkFailed')
-                    : detail;
+                _detail = ref
+                    .read(i18nProvider)
+                    .t(
+                      data['detail'] == 'sdk'
+                          ? 'workbench:desktop.sdkFailed'
+                          : 'workbench:desktop.error',
+                    );
             }
           });
         },
       );
+      if (!_isCurrent(generation)) {
+        await _stopViewer(controller);
+        return;
+      }
+      // Retain the controller before loading so expiry/dispose can stop it
+      // even while the platform is still bootstrapping the SDK.
+      setState(() => _webView = controller);
       await controller.loadHtmlString(
         desktopBootstrapHtml(ticket),
         baseUrl: 'https://bossip.desktop',
       );
+      if (!_isCurrent(generation)) await _stopViewer(controller);
+    } catch (error) {
       if (!_isCurrent(generation)) return;
-      setState(() => _webView = controller);
-    } on _ProvisionFailed catch (error) {
-      if (_isCurrent(generation)) {
-        setState(() {
-          _phase = _Phase.provisionFailed;
-          _detail = error.detail;
-        });
-      }
-    } on _NotProvisioned {
-      if (_isCurrent(generation)) setState(() => _phase = _Phase.provision);
-    } on TimeoutException {
-      if (_isCurrent(generation)) {
+      final code = apiErrorOf(error)?.code;
+      if (code == 'SANDBOX_SUBSCRIPTION_REQUIRED') {
+        _suspend();
+        ref.invalidate(desktopStatusProvider(widget.scope));
+      } else {
         setState(() {
           _phase = _Phase.error;
-          _detail = ref.read(i18nProvider).t('workbench:desktop.error');
+          _detail = error is TimeoutException
+              ? ref.read(i18nProvider).t('workbench:desktop.error')
+              : errorText(ref.read(i18nProvider), error);
         });
       }
-    } catch (e) {
-      if (!_isCurrent(generation)) return;
-      final error = e is DioException ? ApiError.fromDio(e) : e;
-      setState(() {
-        _phase = _Phase.error;
-        _detail = error is ApiError || error.toString().contains('503')
-            ? ref.read(i18nProvider).t('workbench:desktop.unavailable')
-            : ref.read(i18nProvider).t('workbench:desktop.error');
-      });
+    } finally {
+      if (_isCurrent(generation)) _connecting = false;
     }
   }
 
-  void _setChannel(String state) {
-    if (_channelState == state || !_alive) return;
-    setState(() => _channelState = state);
-  }
-
-  void _startChannelPolling(int generation) {
-    _channelTimer?.cancel();
-    _channelTimer = Timer.periodic(const Duration(seconds: 30), (_) async {
-      if (!_isCurrent(generation) || _phase != _Phase.connected) return;
-      try {
-        final status = await ref.read(workbenchApiProvider).desktopStatus();
-        if (_isCurrent(generation)) {
-          _setChannel(status.channel?.state ?? '');
-        }
-      } catch (_) {
-        if (_isCurrent(generation)) _setChannel('down');
+  Future<void> _retryActivation() async {
+    if (_retrying ||
+        !widget.canManage ||
+        !(_status?.hasAccess ?? false) ||
+        _status?.activation?.canRetry != true) {
+      return;
+    }
+    setState(() => _retrying = true);
+    try {
+      await ref.read(desktopApiProvider).retry(widget.scope);
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _detail = ref
+              .read(i18nProvider)
+              .t('workbench:activation.retryFailed'),
+        );
       }
-    });
+    } finally {
+      if (mounted) {
+        setState(() => _retrying = false);
+        ref.invalidate(desktopStatusProvider(widget.scope));
+      }
+    }
   }
 
-  Future<void> _provision() async {
-    final i18n = ref.read(i18nProvider);
+  void _reconnect() {
+    _dropViewer();
     setState(() {
       _phase = _Phase.loading;
-      _detail = i18n.t('workbench:desktop.provisioning');
-      _webView = null;
+      _detail = '';
     });
-    try {
-      await ref.read(workbenchApiProvider).provisionDesktop();
-      if (_alive) unawaited(_connect());
-    } catch (error) {
-      if (!_alive) return;
-      final normalized = error is DioException
-          ? ApiError.fromDio(error)
-          : error;
-      setState(() {
-        _phase = _Phase.error;
-        _detail = normalized is ApiError
-            ? i18n.t('workbench:desktop.unavailable')
-            : i18n.t('workbench:desktop.error');
-      });
-    }
+    // A fresh server permission check always precedes a new ticket.
+    ref.invalidate(desktopStatusProvider(widget.scope));
   }
 
-  void _run(String js) =>
-      unawaited(_webView?.runJavaScript(js) ?? Future.value());
+  void _run(String js) {
+    if (_phase != _Phase.connected || !(_status?.hasAccess ?? false)) return;
+    unawaited(
+      _webView?.runJavaScript(js).catchError((Object _) {}) ??
+          Future<void>.value(),
+    );
+  }
 
   void _toggleControl(bool on) {
-    // The bridge drops the keyboard along with the pointer; mirror that here
-    // so the button does not stay lit over a stream that is read-only again.
     setState(() {
       _control = on;
       if (!on) _keyboard = false;
@@ -291,13 +349,9 @@ class _DesktopTabState extends ConsumerState<DesktopTab> {
     _run(jsSetControl(on));
   }
 
-  /// The desktop's own keyboard, drawn over the stream. It is the only way
-  /// text reaches the guest, and it carries what a phone keyboard cannot:
-  /// Esc, F1-F12, Ctrl/Alt, and 中/En for the guest's own input method.
   void _toggleKeyboard() {
-    final next = !_keyboard;
-    setState(() => _keyboard = next);
-    _run(jsSetKeyboard(next));
+    setState(() => _keyboard = !_keyboard);
+    _run(jsSetKeyboard(_keyboard));
   }
 
   Future<void> _setFullscreen(bool on) async {
@@ -314,40 +368,31 @@ class _DesktopTabState extends ConsumerState<DesktopTab> {
     }
   }
 
-  void _reconnect() {
-    setState(() {
-      _phase = _Phase.loading;
-      _detail = '';
-      _webView = null;
-    });
-    unawaited(_connect());
-  }
-
-  String _statusText(I18nState i18n) => switch (_phase) {
+  String _statusText(I18nState i18n) => i18n.t(switch (_phase) {
     _Phase.connected =>
-      _control
-          ? i18n.t('workbench:desktop.controlOn')
-          : i18n.t('workbench:desktop.readonly'),
-    _Phase.loading => i18n.t('workbench:desktop.loading'),
-    _Phase.error => i18n.t('workbench:desktop.error'),
-    _Phase.closed => i18n.t('workbench:desktop.closed'),
-    _Phase.provision => i18n.t('workbench:desktop.provision'),
-    _Phase.provisionFailed => i18n.t('workbench:desktop.provisionFailed'),
-  };
+      _control ? 'workbench:desktop.controlOn' : 'workbench:desktop.readonly',
+    _Phase.loading => 'workbench:desktop.loading',
+    _Phase.error => 'workbench:desktop.error',
+    _Phase.closed => 'workbench:desktop.closed',
+    _Phase.pending => 'workbench:activation.title',
+    _Phase.attention => 'workbench:activation.attention',
+    _Phase.subscriptionRequired => 'workbench:activation.subscriptionRequired',
+  });
 
   @override
   Widget build(BuildContext context) {
     final t = context.tokens;
     final i18n = ref.watch(i18nProvider);
+    if (_phase == _Phase.subscriptionRequired) {
+      return const DesktopSubscriptionNotice();
+    }
     if (_fullscreen) return _fullscreenView(t, i18n);
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(14, 8, 10, 6),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Row(
                 children: [
@@ -361,58 +406,22 @@ class _DesktopTabState extends ConsumerState<DesktopTab> {
                       style: TextStyle(fontSize: FontSizes.sm, color: t.n700),
                     ),
                   ),
-                  if (_channelState.isNotEmpty)
-                    _ChannelPill(state: _channelState),
+                  if (_status?.channel?.state.isNotEmpty ?? false)
+                    _ChannelPill(state: _status!.channel!.state),
                   if (_phase == _Phase.error || _phase == _Phase.closed)
-                    OutlinedButton(
+                    TextButton(
                       onPressed: _reconnect,
-                      style: OutlinedButton.styleFrom(
-                        side: BorderSide(color: t.hair),
-                        foregroundColor: t.n800,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 4,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(Radii.full),
-                        ),
-                      ),
-                      child: Text(
-                        i18n.t('workbench:desktop.reconnect'),
-                        style: const TextStyle(fontSize: FontSizes.sm),
-                      ),
-                    ),
-                  if (_phase == _Phase.provisionFailed)
-                    OutlinedButton(
-                      onPressed: _provision,
-                      style: OutlinedButton.styleFrom(
-                        side: BorderSide(color: t.hair),
-                        foregroundColor: t.n800,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 4,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(Radii.full),
-                        ),
-                      ),
-                      child: Text(
-                        i18n.t('workbench:desktop.provisionRetry'),
-                        style: const TextStyle(fontSize: FontSizes.sm),
-                      ),
+                      child: Text(i18n.t('workbench:desktop.reconnect')),
                     ),
                 ],
               ),
-              if (_phase == _Phase.connected) ...[
-                const SizedBox(height: 5),
+              if (_phase == _Phase.connected)
                 SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   reverse: true,
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
-                      // Only while the viewer holds the pointer: an on-stream
-                      // keyboard over a read-only desktop types nowhere.
                       if (_control)
                         _IconAction(
                           icon: Icons.keyboard_outlined,
@@ -425,7 +434,6 @@ class _DesktopTabState extends ConsumerState<DesktopTab> {
                         label: i18n.t('workbench:desktop.fullscreen'),
                         onTap: () => unawaited(_setFullscreen(true)),
                       ),
-                      const SizedBox(width: 2),
                       _ControlCheckbox(
                         on: _control,
                         label: i18n.t('workbench:desktop.allowControl'),
@@ -434,7 +442,6 @@ class _DesktopTabState extends ConsumerState<DesktopTab> {
                     ],
                   ),
                 ),
-              ],
             ],
           ),
         ),
@@ -453,79 +460,52 @@ class _DesktopTabState extends ConsumerState<DesktopTab> {
             child: Container(
               color: bare ? Colors.black : t.card,
               alignment: Alignment.center,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (_phase == _Phase.loading) ...[
-                    const Spinner(size: 20),
-                    const SizedBox(height: 10),
-                    Text(
-                      i18n.t('workbench:desktop.loading'),
-                      style: TextStyle(fontSize: FontSizes.sm, color: t.n600),
-                    ),
-                  ] else if (_phase == _Phase.provision) ...[
-                    Text(
-                      i18n.t('workbench:desktop.provision'),
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: FontSizes.base, color: t.n800),
-                    ),
-                    const SizedBox(height: 7),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 28),
-                      child: Text(
-                        i18n.t('workbench:desktop.provisionHint'),
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: FontSizes.sm,
-                          height: 1.5,
-                          color: t.n600,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    if (ref
-                            .watch(activeWorkspaceProvider)
-                            .valueOrNull
-                            ?.current
-                            ?.role
-                            .canManage ==
-                        true)
-                      FilledButton(
-                        onPressed: _provision,
-                        style: FilledButton.styleFrom(
-                          backgroundColor: t.ink,
-                          foregroundColor: t.bg,
-                        ),
-                        child: Text(
-                          i18n.t('workbench:desktop.provisionAction'),
-                        ),
-                      )
-                    else
-                      Text(
-                        i18n.t('workbench:desktop.provisionRestricted'),
-                        style: TextStyle(fontSize: FontSizes.sm, color: t.n600),
-                      ),
-                  ] else ...[
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(28),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (_phase == _Phase.loading ||
+                        _phase == _Phase.pending) ...[
+                      const Spinner(size: 20),
+                      const SizedBox(height: 14),
+                    ],
                     Text(
                       _statusText(i18n),
-                      style: TextStyle(fontSize: FontSizes.base, color: t.n800),
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: t.n800, fontSize: FontSizes.base),
                     ),
-                    if (_detail.isNotEmpty) ...[
-                      const SizedBox(height: 6),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 24),
-                        child: Text(
-                          _detail,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: FontSizes.sm,
-                            color: t.n600,
-                          ),
+                    if (_phase == _Phase.pending ||
+                        _phase == _Phase.attention) ...[
+                      const SizedBox(height: 12),
+                      Text(
+                        i18n.t(
+                          _status?.needsAttention == true
+                              ? 'workbench:activation.attentionHint'
+                              : 'workbench:activation.hint',
                         ),
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: t.n600, height: 1.5),
+                      ),
+                      if (_status?.activation?.canRetry == true &&
+                          widget.canManage) ...[
+                        const SizedBox(height: 16),
+                        OutlinedButton(
+                          onPressed: _retrying ? null : _retryActivation,
+                          child: Text(i18n.t('workbench:activation.retry')),
+                        ),
+                      ],
+                    ],
+                    if (_detail.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      Text(
+                        _detail,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: t.n600),
                       ),
                     ],
                   ],
-                ],
+                ),
               ),
             ),
           ),
@@ -544,42 +524,28 @@ class _DesktopTabState extends ConsumerState<DesktopTab> {
     );
   }
 
-  /// Landscape, edge to edge, no app chrome: a 4:3 stream on a phone only
-  /// becomes legible when the screen's long side is the wide one.
-  Widget _fullscreenView(BossipTokens t, I18nState i18n) {
-    return ColoredBox(
-      color: Colors.black,
-      child: Stack(
-        children: [
-          Positioned.fill(child: _stage(t, i18n, bare: true)),
-          Positioned(
-            top: 4,
-            right: 8,
-            child: SafeArea(
-              child: _FloatingControls(
-                control: _control,
-                keyboard: _keyboard,
-                i18n: i18n,
-                onExit: () => unawaited(_setFullscreen(false)),
-                onControl: () => _toggleControl(!_control),
-                onKeyboard: _toggleKeyboard,
-              ),
+  Widget _fullscreenView(BossipTokens t, I18nState i18n) => ColoredBox(
+    color: Colors.black,
+    child: Stack(
+      children: [
+        Positioned.fill(child: _stage(t, i18n, bare: true)),
+        Positioned(
+          top: 4,
+          right: 8,
+          child: SafeArea(
+            child: _FloatingControls(
+              control: _control,
+              keyboard: _keyboard,
+              i18n: i18n,
+              onExit: () => unawaited(_setFullscreen(false)),
+              onControl: () => _toggleControl(!_control),
+              onKeyboard: _toggleKeyboard,
             ),
           ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ProvisionFailed implements Exception {
-  const _ProvisionFailed(this.detail);
-
-  final String detail;
-}
-
-class _NotProvisioned implements Exception {
-  const _NotProvisioned();
+        ),
+      ],
+    ),
+  );
 }
 
 class _ChannelPill extends ConsumerWidget {

@@ -1,7 +1,7 @@
 import { Suspense, useEffect } from "react"
 import { Outlet, useMatch, useParams } from "react-router"
 import { Sidebar, Topbar, useWorkspaceEvents } from "@/features/workspace"
-import { WorkbenchPanel, usePanelStore, usePanelEvents } from "@/features/workbench"
+import { DesktopActivationDialog, WorkbenchPanel, usePanelStore, usePanelEvents } from "@/features/workbench"
 import { CronPanelTab, CronStatusPill } from "@/features/cron"
 import { Spinner } from "@/shared/ui/Spinner"
 import { useAuthStore } from "@/shared/api/auth-store"
@@ -44,6 +44,9 @@ export default function WorkspaceLayout() {
   return (
     <div className="bg-bg text-ink flex h-screen overflow-hidden">
       <Sidebar />
+      <Suspense fallback={null}>
+        <DesktopActivationDialog />
+      </Suspense>
       <main
         className={cn(
           "flex min-h-0 flex-1 flex-col overflow-hidden",

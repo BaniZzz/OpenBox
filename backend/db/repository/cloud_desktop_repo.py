@@ -108,7 +108,8 @@ class PgCloudDesktopRepo:
             return [_to_dict(row) for row in result.scalars().all()]
 
     async def claim_prewarm(
-        self, workspace_id: str, triggered_by_user_id: str | None
+        self, workspace_id: str, triggered_by_user_id: str | None,
+        *, usable_until: datetime | None = None,
     ) -> dict | None:
         """Atomically claim the newest-expiring prewarm desktop."""
         async with self._pool_lock:
@@ -127,6 +128,8 @@ class PgCloudDesktopRepo:
                         CloudDesktop.pool_state == "prewarm",
                         CloudDesktop.workspace_id.is_(None),
                         CloudDesktop.is_deleted.is_(False),
+                        *([CloudDesktop.expires_at > usable_until,
+                           CloudDesktop.charge_type == "PrePaid"] if usable_until else []),
                     )
                     .order_by(CloudDesktop.expires_at.desc(), CloudDesktop.created_at)
                     .limit(1)

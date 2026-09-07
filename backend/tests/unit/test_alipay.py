@@ -187,6 +187,22 @@ async def subscribe(payer, plan="pro"):
         provider_name="alipay", request_key=uuid4().hex, kind="subscription", plan_id=plan, cycle="monthly")
 
 
+@pytest.mark.parametrize("plan_id", ["pro", "max"])
+@pytest.mark.parametrize("cycle", ["monthly", "yearly"])
+async def test_all_plan_checkouts_sign_exact_ten_fen_for_web_and_app(alipay, payer, plan_id, cycle):
+    order = await create_order(workspace_id=payer.user["default_workspace_id"], user_id=payer.user["id"],
+        provider_name="alipay", request_key=uuid4().hex, kind="subscription", plan_id=plan_id, cycle=cycle)
+    assert order["amount_fen"] == 10
+    web_params = dict(parse_qsl(urlsplit(order["checkout_url"]).query))
+    app_checkout = await payer.client.post(f"/api/billing/orders/{order['id']}/app-checkout")
+    assert app_checkout.status_code == 200
+    app_params = dict(parse_qsl(app_checkout.json()["sdk_payload"]))
+    for params in (web_params, app_params):
+        verify_request(alipay, params)
+        content = json.loads(params["biz_content"])
+        assert content["total_amount"] == "0.10" and content["out_trade_no"] == order["id"]
+
+
 async def test_native_webhook_returns_plain_success_only_after_exact_once_credit(alipay, payer):
     order = await subscribe(payer)
     assert order["amount_fen"] == 10
@@ -204,8 +220,8 @@ async def test_native_webhook_returns_plain_success_only_after_exact_once_credit
     assert (await send(trade_status="TRADE_FINISHED")).text == "success"
     assert (await send(trade_no="another-trade")).status_code == 409
     next_order = await subscribe(payer, "max")
-    assert next_order["amount_fen"] == 20
-    assert (await payer.client.post(callback, content=alipay.notify(next_order["id"], total_amount="0.20"), headers=headers)).status_code == 409
+    assert next_order["amount_fen"] == 10
+    assert (await payer.client.post(callback, content=alipay.notify(next_order["id"]), headers=headers)).status_code == 409
     async with get_db_session() as db:
         ws = payer.user["default_workspace_id"]
         assert (await db.get(CreditBalance, ws)).balance == 280

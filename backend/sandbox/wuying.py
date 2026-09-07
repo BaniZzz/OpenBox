@@ -146,6 +146,8 @@ class WuyingProvider(SandboxProvider):
             raise KeyError(container_id)
         if user_id and record["workspace_id"] != user_id:
             raise PermissionError(f"Desktop {container_id} does not belong to {user_id}")
+        from sandbox.entitlement import require_sandbox_subscription
+        await require_sandbox_subscription(record["workspace_id"])
         return self._record_container(record)
 
     async def list_containers(self) -> list[ContainerInfo]:
@@ -186,6 +188,8 @@ class WuyingProvider(SandboxProvider):
         from db.repository.cloud_desktop_repo import cloud_desktop_repo
         from sandbox.wuying_desktop_service import DesktopNotReady
 
+        from sandbox.entitlement import require_sandbox_subscription
+        await require_sandbox_subscription(owner)
         record = await cloud_desktop_repo.get_for_workspace(owner)
         if not record:
             raise DesktopNotReady({"state": "not_provisioned"})
@@ -261,6 +265,8 @@ class WuyingProvider(SandboxProvider):
                 raise PermissionError(
                     f"Desktop {container_id} does not belong to {user_id}"
                 )
+            from sandbox.entitlement import require_sandbox_subscription
+            await require_sandbox_subscription(record["workspace_id"])
             host, port, api_key = route_for_record(record)
             endpoint = f"http://{host}:{port}"
         headers["X-API-Key"] = api_key

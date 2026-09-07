@@ -337,7 +337,22 @@ async def run_loop(session_id: str, user_id: str = "default") -> MessageWithPart
 
         # Get sandbox client
         from sandbox import sandbox_manager
-        sandbox = await sandbox_manager.get_client(session_id, user_id=user_id)
+        from sandbox.entitlement import (
+            SandboxSubscriptionRequired, require_sandbox_subscription, subscription_sandbox_enabled,
+        )
+        from sandbox.wuying_desktop_service import DesktopNotReady
+        sandbox_error = None
+        try:
+            if subscription_sandbox_enabled():
+                await require_sandbox_subscription(session.workspace_id)
+            sandbox = await sandbox_manager.get_client(session_id, user_id=user_id)
+        except SandboxSubscriptionRequired as exc:
+            sandbox = None
+            sandbox_error = exc.payload
+        except DesktopNotReady as exc:
+            sandbox = None
+            sandbox_error = {"code": "DESKTOP_NOT_READY", "state": exc.payload.get("state"),
+                "detail": "无影云正在准备或暂不可用。普通对话可继续，sandbox 准备好后请重试执行。"}
         # A project created while the sandbox was down has no directory yet.
         await ensure_directory(sandbox, await slug_for(session.project_id))
 
@@ -586,6 +601,7 @@ async def run_loop(session_id: str, user_id: str = "default") -> MessageWithPart
                 project_id=session.project_id or "",
                 agent_id=agent_name,
                 sandbox=sandbox,
+                sandbox_error=sandbox_error,
                 bus=bus,
                 abort=abort,
                 workdir=session_workdir,
@@ -665,6 +681,9 @@ async def run_loop(session_id: str, user_id: str = "default") -> MessageWithPart
                 project_id=session.project_id or "",
                 workspace_id=session.workspace_id,
             )
+            if sandbox_error:
+                system.append("Sandbox availability: " + sandbox_error["detail"]
+                    + " Answer ordinary conversation normally. Do not claim to have executed sandbox tools.")
             system.append(build_tool_visibility_fragment(
                 tools.keys(),
                 strategy=runtime.provider_plan.strategy,
@@ -1054,7 +1073,7 @@ async def run_loop(session_id: str, user_id: str = "default") -> MessageWithPart
             last_step_info = assistant_info
 
             # Step start with snapshot
-            start_snapshot = await snapshot.track(session_id, sandbox)
+            start_snapshot = await snapshot.track(session_id, sandbox) if sandbox is not None else None
             step_start = StepStartPart(
                 id=ascending("part"),
                 step=step,
@@ -1168,7 +1187,7 @@ async def run_loop(session_id: str, user_id: str = "default") -> MessageWithPart
             step_duration = result.duration
             doom_loop_history.extend(result.completed_tool_parts)
             # Step finish with snapshot
-            end_snapshot = await snapshot.track(session_id, sandbox)
+            end_snapshot = await snapshot.track(session_id, sandbox) if sandbox is not None else None
             step_finish = StepFinishPart(
                 id=ascending("part"),
                 step=step,

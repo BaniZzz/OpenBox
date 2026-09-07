@@ -65,6 +65,10 @@ class WuyingDesktopService:
 
         States: not_provisioned | creating | starting | running | stopped | failed.
         """
+        from sandbox.entitlement import subscription_sandbox_enabled
+        if subscription_sandbox_enabled():
+            from sandbox.desktop_activation import activation_status
+            return await activation_status(workspace_id)
         record = await cloud_desktop_repo.get_for_workspace(workspace_id)
         if record is None:
             record = await self._adopt_from_tags(workspace_id)
@@ -102,6 +106,10 @@ class WuyingDesktopService:
         display_name: str | None = None,
     ) -> dict:
         """Idempotent kick: create or start this workspace's desktop as needed."""
+        from sandbox.entitlement import subscription_sandbox_enabled
+        if subscription_sandbox_enabled():
+            from sandbox.desktop_activation import retry_activation
+            return await retry_activation(workspace_id)
         record = await cloud_desktop_repo.get_for_workspace(workspace_id)
         if record is None:
             record = await self._adopt_from_tags(workspace_id)
@@ -167,6 +175,15 @@ class WuyingDesktopService:
         desktop is kicked awake first so the caller's 202 retry loop lands on
         a Running one eventually.
         """
+        from sandbox.entitlement import require_sandbox_subscription, subscription_sandbox_enabled
+        if subscription_sandbox_enabled():
+            await require_sandbox_subscription(workspace_id)
+            state = await self.status(workspace_id)
+            if state["state"] != "running":
+                raise DesktopNotReady(state)
+            # No ghost deletion/recreation on the paid, retained-desktop path.
+            eu_id = await wuying_ecd.verify_ownership(state["desktopId"], workspace_id)
+            return state["desktopId"], eu_id
         state = await self.status(workspace_id)
         if state["state"] == "stopped":
             state = await self.provision(workspace_id)

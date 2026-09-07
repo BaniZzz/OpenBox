@@ -28,6 +28,7 @@ class ToolContext:
     workspace_id: str = ""
     project_id: str = ""
     sandbox: Any = None  # SandboxClient
+    sandbox_error: dict | None = None  # Expected unavailability, not a failed LLM turn
     bus: Any = None
     abort: asyncio.Event = field(default_factory=asyncio.Event)
     message_id: str = ""
@@ -131,6 +132,12 @@ def define_tool(
     from tool.truncation import truncate_output
 
     async def wrapped_execute(args: dict, ctx: ToolContext) -> ToolResult:
+        if sandbox_required and ctx.sandbox_error:
+            return ToolResult(
+                title="Sandbox unavailable",
+                output=ctx.sandbox_error["detail"],
+                metadata={"error": True, **ctx.sandbox_error},
+            )
         # Validate input
         try:
             validated = parameters.model_validate(args)

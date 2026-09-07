@@ -59,6 +59,9 @@ String jsSetControl(bool on) => 'window.__setControl(${on ? 'true' : 'false'})';
 String jsSetKeyboard(bool on) =>
     'window.__setKeyboard(${on ? 'true' : 'false'})';
 
+/// Stop only this viewer session, never the retained cloud machine.
+const jsStopDesktop = 'window.__stopDesktop && window.__stopDesktop()';
+
 const _html = r'''
 <!doctype html><html><head>
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
@@ -69,7 +72,7 @@ iframe{position:absolute;display:block;border:0}</style></head>
 <script>
 var TICKET = __TICKET__;
 var W = __REMOTE_W__, H = __REMOTE_H__;
-var session = null, control = false, keyboard = false;
+var session = null, control = false, keyboard = false, disposed = false;
 function post(ev, detail) { try { Bossip.postMessage(JSON.stringify({event: ev, detail: detail || ''})); } catch (e) {} }
 function frame() { return document.getElementById('wuying-desktop-frame'); }
 // Call one method on the ASP streaming engine. Wrapped because a build
@@ -121,9 +124,19 @@ window.__setKeyboard = function (on) {
     if (session.openSoftKeyboard) session.openSoftKeyboard(keyboard);
   } catch (e) {}
 };
+window.__stopDesktop = function () {
+  disposed = true;
+  window.__setControl(false);
+  try { if (session && session.stop) session.stop(); } catch (e) {}
+  session = null;
+  var f = frame();
+  if (f) f.src = 'about:blank';
+};
+addEventListener('pagehide', window.__stopDesktop);
 var s = document.createElement('script');
 s.src = '__SDK_URL__'; s.async = true;
 s.onload = function () {
+  if (disposed) return;
   try {
     var sdk = window.Wuying && window.Wuying.WebSDK;
     if (!sdk) { post('error', 'sdk'); return; }

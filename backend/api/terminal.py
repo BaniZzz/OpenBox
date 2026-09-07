@@ -15,6 +15,7 @@ router = APIRouter()
 @router.websocket("/ws/terminal/{container_id}")
 async def terminal_websocket(websocket: WebSocket, container_id: str, ticket: str = Query(default="")):
     user_id = "default"
+    ticket_workspace = None
     if is_auth_enabled():
         if not ticket:
             await websocket.close(code=4001, reason="Ticket required")
@@ -24,15 +25,15 @@ async def terminal_websocket(websocket: WebSocket, container_id: str, ticket: st
             await websocket.close(code=4001, reason="Invalid or expired ticket")
             return
         user_id = user_data["user_id"]
+        ticket_workspace = user_data.get("workspace_id")
 
     await websocket.accept()
 
     try:
         from sandbox.ownership import owner_for
 
-        info = await provider.get_container(
-            container_id, user_id=await owner_for(user_id)
-        )
+        owner = ticket_workspace or await owner_for(user_id)
+        info = await provider.get_container(container_id, user_id=owner)
     except ValueError:
         await websocket.send_json({"type": "error", "data": "Container not found"})
         await websocket.close()
@@ -65,6 +66,9 @@ async def terminal_websocket(websocket: WebSocket, container_id: str, ticket: st
                         message = await websocket.receive()
                         if message["type"] == "websocket.disconnect":
                             break
+                        if provider.routes_per_user:
+                            from sandbox.entitlement import require_sandbox_subscription
+                            await require_sandbox_subscription(owner)
                         if "bytes" in message and message["bytes"]:
                             await container_ws.send(message["bytes"])
                         elif "text" in message and message["text"]:
@@ -85,15 +89,17 @@ async def terminal_websocket(websocket: WebSocket, container_id: str, ticket: st
                 except Exception as e:
                     logger.debug(f"container_to_frontend ended: {e}")
 
+            pumps = [asyncio.create_task(frontend_to_container()), asyncio.create_task(container_to_frontend())]
+            if provider.routes_per_user:
+                from sandbox.entitlement import watch_sandbox_subscription
+                pumps.append(asyncio.create_task(watch_sandbox_subscription(owner)))
             done, pending = await asyncio.wait(
-                [
-                    asyncio.create_task(frontend_to_container()),
-                    asyncio.create_task(container_to_frontend()),
-                ],
+                pumps,
                 return_when=asyncio.FIRST_COMPLETED,
             )
             for task in pending:
                 task.cancel()
+            await asyncio.gather(*pumps, return_exceptions=True)
 
     except Exception as e:
         logger.error(f"Failed to connect to container terminal: {e}")

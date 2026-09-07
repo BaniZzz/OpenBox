@@ -3,13 +3,23 @@
 // retried here); the SDK renders the remote screen into an iframe we scale to
 // fit. Read-only by default — the agent works on that desktop, so taking the
 // mouse is an explicit choice. No machine ids ever reach the UI.
-import { useEffect, useRef, useState } from "react"
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type RefObject,
+  type Dispatch,
+  type SetStateAction,
+} from "react"
 import { useTranslation } from "react-i18next"
 import { Maximize2, Minimize2, RotateCw, Upload } from "lucide-react"
 import { http, ApiError } from "@/shared/api/http"
 import { Spinner } from "@/shared/ui/Spinner"
 import { cn } from "@/shared/lib/cn"
 import { useWorkspaceStore } from "@/shared/api/workspace-store"
+import type { DesktopStatus } from "@/shared/api/desktop"
+import { paths } from "@/shared/router/paths"
 
 const SDK_URL =
   "https://g.alicdn.com/aliyun-ecs/WuyingWebSdk-multi/2.13.9-asp3.18.11/WuyingWebSDK/WuyingWebSDK.js"
@@ -55,12 +65,8 @@ interface Ticket {
   taskId?: string
 }
 
-interface DesktopStatus {
-  state: string
-  mode?: string
-  desktopId?: string
-  error?: string
-  channel?: { state: string; last_seen_at?: string | null; error?: string }
+function desktopOptions(workspaceId: string | null) {
+  return { headers: { "X-Workspace-Id": workspaceId ?? "" } }
 }
 
 /** Thrown when the backend says this user's desktop failed to provision. */
@@ -92,11 +98,11 @@ function loadSdk(): Promise<void> {
 }
 
 /** Poll the ticket endpoint through its 202-pending window. */
-async function fetchTicket(alive: () => boolean): Promise<Ticket> {
+async function fetchTicket(alive: () => boolean, workspaceId: string | null): Promise<Ticket> {
   let taskId = ""
   for (let attempt = 0; attempt < 30 && alive(); attempt += 1) {
     const query = taskId ? `?task_id=${encodeURIComponent(taskId)}` : ""
-    const data = await http.get<Ticket>(`/api/desktop/ticket${query}`)
+    const data = await http.get<Ticket>(`/api/desktop/ticket${query}`, desktopOptions(workspaceId))
     if (data.ticket) return data
     taskId = data.taskId ?? taskId
     await new Promise((r) => setTimeout(r, 3000))
@@ -105,11 +111,18 @@ async function fetchTicket(alive: () => boolean): Promise<Ticket> {
 }
 
 /** Wait out a per-user desktop that is still creating/starting (2-3 min cold). */
-async function waitDesktopRunning(alive: () => boolean, onProgress: (state: string) => void): Promise<void> {
+async function waitDesktopRunning(
+  alive: () => boolean,
+  onProgress: (state: string) => void,
+  workspaceId: string | null,
+): Promise<void> {
   for (let attempt = 0; attempt < 120 && alive(); attempt += 1) {
-    const status = await http.get<DesktopStatus>("/api/desktop/status")
+    const status = await http.get<DesktopStatus>("/api/desktop/status", desktopOptions(workspaceId))
+    if (status.entitled === false || status.state === "subscription_required")
+      throw new Error("subscription_required")
     if (status.state === "running") return
-    if (status.state === "failed") throw new ProvisionFailedError(status.error ?? "")
+    if (["failed", "needs_attention"].includes(status.state))
+      throw new ProvisionFailedError(status.activation?.error ?? status.error ?? "")
     if (status.state === "not_provisioned") throw new Error("not_provisioned")
     onProgress(status.state)
     await new Promise((r) => setTimeout(r, 5000))
@@ -117,9 +130,28 @@ async function waitDesktopRunning(alive: () => boolean, onProgress: (state: stri
   throw new Error("timeout")
 }
 
-type Phase = "loading" | "connected" | "error" | "closed" | "provision" | "provisionFailed"
+type Phase =
+  "loading" | "connected" | "error" | "closed" | "provision" | "provisionFailed" | "subscriptionRequired"
 
 type Fullscreen = "off" | "native" | "fallback"
+
+async function requireDesktopReady(
+  status: DesktopStatus | null,
+  alive: () => boolean,
+  onProgress: (state: string) => void,
+  workspaceId: string | null,
+) {
+  if (!status) return
+  if (status.entitled === false || status.state === "subscription_required")
+    throw new Error("subscription_required")
+  if (status.state === "not_provisioned" && status.mode === "per_user") throw new Error("not_provisioned")
+  if (["failed", "needs_attention"].includes(status.state))
+    throw new ProvisionFailedError(status.activation?.error ?? status.error ?? "")
+  if (status.state && status.state !== "running" && status.state !== "not_provisioned") {
+    onProgress(status.state)
+    await waitDesktopRunning(alive, onProgress, workspaceId)
+  }
+}
 
 /** Prefer the current SDK input API and keep the legacy method as fallback. */
 function setSessionControl(session: WuyingSession | null, on: boolean) {
@@ -160,18 +192,32 @@ function focusFrame(frame: HTMLIFrameElement | null) {
   }
 }
 
-function useChannelState(phase: Phase) {
+function useChannelState(
+  phase: Phase,
+  workspaceId: string | null,
+  onStatus: (status: DesktopStatus) => void,
+) {
   const [state, setState] = useState("")
   useEffect(() => {
-    if (phase !== "connected") return
+    if (phase !== "connected" && phase !== "subscriptionRequired") return
+    let alive = true
     const timer = window.setInterval(() => {
       void http
-        .get<DesktopStatus>("/api/desktop/status")
-        .then((status) => setState(status.channel?.state ?? ""))
-        .catch(() => setState("down"))
-    }, 30_000)
-    return () => window.clearInterval(timer)
-  }, [phase])
+        .get<DesktopStatus>("/api/desktop/status", desktopOptions(workspaceId))
+        .then((status) => {
+          if (!alive) return
+          setState(status.channel?.state ?? "")
+          onStatus(status)
+        })
+        .catch(() => {
+          if (alive) setState("down")
+        })
+    }, 5_000)
+    return () => {
+      alive = false
+      window.clearInterval(timer)
+    }
+  }, [phase, workspaceId, onStatus])
   return [state, setState] as const
 }
 
@@ -179,13 +225,75 @@ function ChannelStatus({ state }: { state: string }) {
   const { t } = useTranslation("workbench")
   if (!state) return null
   return (
-    <span className="flex-none rounded-full bg-hairsoft px-2 py-0.5 text-xs text-n600">
+    <span className="bg-hairsoft text-n600 flex-none rounded-full px-2 py-0.5 text-xs">
       {t(`desktop.channel.${state}`, { defaultValue: state })}
     </span>
   )
 }
 
+function useDesktopConnectionWatch({
+  phase,
+  workspaceId,
+  sessionRef,
+  setPhase,
+  setAttempt,
+}: {
+  phase: Phase
+  workspaceId: string | null
+  sessionRef: RefObject<WuyingSession | null>
+  setPhase: Dispatch<SetStateAction<Phase>>
+  setAttempt: Dispatch<SetStateAction<number>>
+}) {
+  const onStatus = useCallback(
+    (status: DesktopStatus) => {
+      if (status.entitled === false || status.state === "subscription_required") {
+        const session = sessionRef.current
+        sessionRef.current = null
+        try {
+          if (session?.stop) session.stop()
+          else session?.stopConnection?.()
+        } catch {
+          /* Already closed. */
+        }
+        setPhase("subscriptionRequired")
+      } else if (phase === "subscriptionRequired" && status.entitled) {
+        setPhase("loading")
+        setAttempt((n) => n + 1)
+      }
+    },
+    [phase, sessionRef, setPhase, setAttempt],
+  )
+  return useChannelState(phase, workspaceId, onStatus)
+}
+
+function isSubscriptionError(error: unknown) {
+  return (
+    (error instanceof Error && error.message === "subscription_required") ||
+    (error instanceof ApiError && error.code === "SANDBOX_SUBSCRIPTION_REQUIRED")
+  )
+}
+
+function stopDesktopSession(
+  sessionRef: RefObject<WuyingSession | null>,
+  frameRef: RefObject<HTMLIFrameElement | null>,
+) {
+  const session = sessionRef.current
+  sessionRef.current = null
+  frameRef.current = null
+  try {
+    if (session?.stop) session.stop()
+    else session?.stopConnection?.()
+  } catch {
+    /* Already disconnected. */
+  }
+}
+
 export function DesktopTab() {
+  const workspaceId = useWorkspaceStore((s) => s.currentId)
+  return <WorkspaceDesktopTab key={workspaceId ?? "default"} workspaceId={workspaceId} />
+}
+
+function WorkspaceDesktopTab({ workspaceId }: { workspaceId: string | null }) {
   const { t } = useTranslation("workbench")
   const rootRef = useRef<HTMLDivElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
@@ -198,7 +306,13 @@ export function DesktopTab() {
   const [clipboard, setClipboard] = useState(true)
   const [fs, setFs] = useState<Fullscreen>("off")
   const [attempt, setAttempt] = useState(0)
-  const [channelState, setChannelState] = useChannelState(phase)
+  const [channelState, setChannelState] = useDesktopConnectionWatch({
+    phase,
+    workspaceId,
+    sessionRef,
+    setPhase,
+    setAttempt,
+  })
   // The connect effect outlives renders; mirror the toggles for it.
   const togglesRef = useRef({ control: false, clipboard: true })
   useEffect(() => {
@@ -212,21 +326,8 @@ export function DesktopTab() {
     let alive = true
     const stage = stageRef.current
 
-    const stop = () => {
-      const s = sessionRef.current
-      sessionRef.current = null
-      frameRef.current = null
-      try {
-        if (s?.stop) s.stop()
-        else s?.stopConnection?.()
-      } catch {
-        // already gone
-      }
-    }
-
     // The connection lifecycle deliberately keeps each guarded SDK phase in
     // one closure so cleanup can invalidate every continuation via `alive`.
-    // eslint-disable-next-line complexity
     void (async () => {
       try {
         // Per-user mode: make sure this user's own desktop exists and is
@@ -234,27 +335,21 @@ export function DesktopTab() {
         // whenever it is usable, so this stays a single code path. A failing
         // status endpoint (older backend, provider misconfig) falls through to
         // the ticket call, which owns the definitive error.
-        const status = await http.get<DesktopStatus>("/api/desktop/status").catch(() => null)
+        const status = await http
+          .get<DesktopStatus>("/api/desktop/status", desktopOptions(workspaceId))
+          .catch(() => null)
         if (!alive) return
-        if (status) {
-          setChannelState(status.channel?.state ?? "")
-          if (status.state === "not_provisioned" && status.mode === "per_user") {
-            setPhase("provision")
-            return
-          }
-          if (status.state === "failed") throw new ProvisionFailedError(status.error ?? "")
-          if (status.state && status.state !== "running" && status.state !== "not_provisioned") {
-            setDetail(t("desktop.provisioning"))
-            await waitDesktopRunning(
-              () => alive,
-              (state) => setDetail(t(state === "assigning" ? "desktop.assigning" : "desktop.provisioning")),
-            )
-            if (!alive) return
-            setDetail("")
-          }
-        }
+        setChannelState(status?.channel?.state ?? "")
+        await requireDesktopReady(
+          status,
+          () => alive,
+          (state) => setDetail(t(state === "assigning" ? "desktop.assigning" : "desktop.provisioning")),
+          workspaceId,
+        )
+        if (!alive) return
+        setDetail("")
 
-        const [, ticket] = await Promise.all([loadSdk(), fetchTicket(() => alive)])
+        const [, ticket] = await Promise.all([loadSdk(), fetchTicket(() => alive, workspaceId)])
         if (!alive || !stage) return
 
         stage.replaceChildren()
@@ -338,6 +433,10 @@ export function DesktopTab() {
         session.start()
       } catch (e) {
         if (!alive) return
+        if (isSubscriptionError(e)) {
+          setPhase("subscriptionRequired")
+          return
+        }
         if (e instanceof ProvisionFailedError) {
           setPhase("provisionFailed")
           setDetail(e.detail)
@@ -355,9 +454,9 @@ export function DesktopTab() {
 
     return () => {
       alive = false
-      stop()
+      stopDesktopSession(sessionRef, frameRef)
     }
-  }, [attempt, t, setChannelState])
+  }, [attempt, t, setChannelState, workspaceId])
 
   // Fit the iframe itself to the stage. Avoid transform: the Web SDK measures
   // its viewport to map mouse coordinates and synthesize IME input.
@@ -445,7 +544,7 @@ export function DesktopTab() {
     setPhase("loading")
     setDetail(t("desktop.provisioning"))
     try {
-      await http.post("/api/desktop/provision")
+      await http.post("/api/desktop/provision", undefined, desktopOptions(workspaceId))
       setAttempt((n) => n + 1)
     } catch {
       setPhase("error")
@@ -470,7 +569,7 @@ export function DesktopTab() {
       ref={rootRef}
       className={cn(
         "flex min-h-0 flex-1 flex-col",
-        fs === "fallback" ? "fixed inset-0 z-50 bg-bg p-3" : "px-3 pb-3",
+        fs === "fallback" ? "bg-bg fixed inset-0 z-50 p-3" : "px-3 pb-3",
         fs === "native" && "bg-bg p-3",
       )}
     >
@@ -482,7 +581,7 @@ export function DesktopTab() {
           )}
           aria-hidden
         />
-        <span className="min-w-0 flex-1 truncate text-sm text-n700">
+        <span className="text-n700 min-w-0 flex-1 truncate text-sm">
           {phase === "connected"
             ? control
               ? t("desktop.controlOn")
@@ -492,7 +591,7 @@ export function DesktopTab() {
         <ChannelStatus state={channelState} />
         {phase === "connected" && (
           <>
-            <label className="flex flex-none cursor-pointer items-center gap-1.5 text-sm text-n700">
+            <label className="text-n700 flex flex-none cursor-pointer items-center gap-1.5 text-sm">
               <input
                 type="checkbox"
                 checked={control}
@@ -501,7 +600,7 @@ export function DesktopTab() {
               />
               {t("desktop.allowControl")}
             </label>
-            <label className="flex flex-none cursor-pointer items-center gap-1.5 text-sm text-n700">
+            <label className="text-n700 flex flex-none cursor-pointer items-center gap-1.5 text-sm">
               <input
                 type="checkbox"
                 checked={clipboard}
@@ -511,7 +610,7 @@ export function DesktopTab() {
               {t("desktop.clipboard")}
             </label>
             {control && (
-              <span className="flex-none text-xs text-n500" title={t("desktop.imeHintDetail")}>
+              <span className="text-n500 flex-none text-xs" title={t("desktop.imeHintDetail")}>
                 {t("desktop.imeHint")}
               </span>
             )}
@@ -520,7 +619,7 @@ export function DesktopTab() {
               onClick={() => fileRef.current?.click()}
               title={t("desktop.upload")}
               aria-label={t("desktop.upload")}
-              className="flex size-7 flex-none items-center justify-center rounded-full text-n700 hover:bg-hairsoft"
+              className="text-n700 hover:bg-hairsoft flex size-7 flex-none items-center justify-center rounded-full"
             >
               <Upload size={14.5} strokeWidth={2.2} />
             </button>
@@ -531,9 +630,13 @@ export function DesktopTab() {
           onClick={toggleFullscreen}
           title={fs === "off" ? t("desktop.fullscreen") : t("desktop.exitFullscreen")}
           aria-label={fs === "off" ? t("desktop.fullscreen") : t("desktop.exitFullscreen")}
-          className="flex size-7 flex-none items-center justify-center rounded-full text-n700 hover:bg-hairsoft"
+          className="text-n700 hover:bg-hairsoft flex size-7 flex-none items-center justify-center rounded-full"
         >
-          {fs === "off" ? <Maximize2 size={14.5} strokeWidth={2.2} /> : <Minimize2 size={14.5} strokeWidth={2.2} />}
+          {fs === "off" ? (
+            <Maximize2 size={14.5} strokeWidth={2.2} />
+          ) : (
+            <Minimize2 size={14.5} strokeWidth={2.2} />
+          )}
         </button>
         {(phase === "error" || phase === "closed") && (
           <RetryButton
@@ -551,9 +654,11 @@ export function DesktopTab() {
         <input ref={fileRef} type="file" onChange={onPickFile} className="hidden" aria-hidden tabIndex={-1} />
       </div>
 
-      <div className="relative min-h-0 flex-1 overflow-hidden rounded-2xl border border-hair bg-card">
+      <div className="border-hair bg-card relative min-h-0 flex-1 overflow-hidden rounded-2xl border">
         <div ref={stageRef} className="absolute inset-0" data-testid="desktop-stage" />
-        {phase !== "connected" && <StageOverlay phase={phase} detail={detail} onProvision={() => void provisionNow()} />}
+        {phase !== "connected" && (
+          <StageOverlay phase={phase} detail={detail} onProvision={() => void provisionNow()} />
+        )}
       </div>
     </div>
   )
@@ -564,7 +669,7 @@ function RetryButton({ label, onClick }: { label: string; onClick: () => void })
     <button
       type="button"
       onClick={onClick}
-      className="flex flex-none items-center gap-1.5 rounded-full border border-hair px-3 py-1 text-sm text-n800 hover:bg-hairsoft"
+      className="border-hair text-n800 hover:bg-hairsoft flex flex-none items-center gap-1.5 rounded-full border px-3 py-1 text-sm"
     >
       <RotateCw size={13} strokeWidth={2.4} />
       {label}
@@ -589,32 +694,42 @@ function StageOverlay({
     return selected?.role === "owner" || selected?.role === "admin"
   })
   return (
-    <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-card">
+    <div className="bg-card absolute inset-0 z-10 flex flex-col items-center justify-center gap-3">
       {phase === "loading" ? (
         <>
           <Spinner className="size-5" />
-          <span className="text-sm text-n600">{detail || t("desktop.loading")}</span>
+          <span className="text-n600 text-sm">{detail || t("desktop.loading")}</span>
+        </>
+      ) : phase === "subscriptionRequired" ? (
+        <>
+          <span className="text-n800 text-base">{t("activation.subscriptionRequired")}</span>
+          <span className="text-n600 max-w-90 px-4 text-center text-sm">
+            {t("activation.subscriptionHint")}
+          </span>
+          <a href={paths.billing()} className="bg-ink text-bg rounded-full px-4 py-1.5 text-sm">
+            {t("activation.subscribe")}
+          </a>
         </>
       ) : phase === "provision" ? (
         <>
-          <span className="text-base text-n800">{t("desktop.provision")}</span>
-          <span className="max-w-90 text-center text-sm text-n600">{t("desktop.provisionHint")}</span>
+          <span className="text-n800 text-base">{t("desktop.provision")}</span>
+          <span className="text-n600 max-w-90 text-center text-sm">{t("desktop.provisionHint")}</span>
           {canProvision ? (
             <button
               type="button"
               onClick={onProvision}
-              className="rounded-full bg-ink px-4 py-1.5 text-sm text-bg hover:bg-a800"
+              className="bg-ink text-bg hover:bg-a800 rounded-full px-4 py-1.5 text-sm"
             >
               {t("desktop.provisionAction")}
             </button>
           ) : (
-            <span className="text-sm text-n600">{t("desktop.provisionRestricted")}</span>
+            <span className="text-n600 text-sm">{t("desktop.provisionRestricted")}</span>
           )}
         </>
       ) : (
         <>
-          <span className="text-base text-n800">{t(`desktop.${phase}`)}</span>
-          {detail && <span className="max-w-90 text-center text-sm text-n600">{detail}</span>}
+          <span className="text-n800 text-base">{t(`desktop.${phase}`)}</span>
+          {detail && <span className="text-n600 max-w-90 text-center text-sm">{detail}</span>}
         </>
       )}
     </div>

@@ -1,4 +1,31 @@
 {
+  "activation": {
+    "title": "正在准备你的无影云",
+    "ready": "无影云已就绪",
+    "readyHint": "现在可以使用 sandbox 工具，或在侧边栏打开云电脑。",
+    "hint": "付款已确认，云电脑正在自动准备。你可以继续普通对话；关闭页面不会中断开通，再次打开会恢复显示进度。",
+    "attention": "云电脑开通待核实",
+    "attentionHint": "云端购买结果暂不明确，系统正在查找原机器，不会重复购买。请联系管理员核实云订单。",
+    "retrying": "暂时未能完成，服务器会自动重试。无需重复付款。",
+    "reconnecting": "暂时无法读取最新状态，正在重连。上方为最后保存的进度。",
+    "retryFailed": "重试请求未成功，请稍后再试。后台任务仍会继续。",
+    "viewProgress": "无影云 · 查看开通进度",
+    "progress": "开通进度",
+    "close": "关闭开通进度",
+    "continueChat": "继续对话",
+    "done": "知道了",
+    "retry": "立即重试",
+    "subscriptionRequired": "付费套餐专享无影云",
+    "subscriptionHint": "Free 用户可以继续普通 LLM 对话。订购付费套餐后会自动开通 sandbox；套餐到期后原机器保留，续费后恢复使用（以云端机器仍存在为前提）。",
+    "subscribe": "查看套餐",
+    "steps": {
+      "paid": "付款已确认",
+      "assigning": "分配或创建云电脑",
+      "starting": "启动云电脑",
+      "connecting": "验证 sandbox 连接",
+      "ready": "准备就绪"
+    }
+  },
   "tabs": {
     "new": "新标签",
     "review": "审阅",

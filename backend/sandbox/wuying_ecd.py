@@ -238,7 +238,10 @@ async def remove_openbox_end_users(end_user_ids: list[str]) -> list[str]:
 # Desktop lifecycle
 # ---------------------------------------------------------------------------
 
-async def create_desktop(workspace_id: str, display_name: str | None = None) -> str:
+async def create_desktop(
+    workspace_id: str, display_name: str | None = None, *, monthly: bool = False,
+    before_submit=None,
+) -> str:
     """Create a desktop owned by one workspace's EndUser; return desktop id."""
     from alibabacloud_ecd20200930 import models as ecd_models
 
@@ -270,7 +273,7 @@ async def create_desktop(workspace_id: str, display_name: str | None = None) -> 
         region_id=config.wuying_region_id,
         office_site_id=config.wuying_office_site_id,
         policy_group_id=config.wuying_policy_group_id,
-        charge_type=config.wuying_charge_type,
+        charge_type="PrePaid" if monthly else config.wuying_charge_type,
         desktop_name=eu_id[:32],
         amount=1,
         end_user_id=[eu_id],
@@ -291,14 +294,16 @@ async def create_desktop(workspace_id: str, display_name: str | None = None) -> 
             system_disk_size=config.wuying_system_disk_size,
         ),
     )
-    if config.wuying_charge_type == "PrePaid":
+    if monthly or config.wuying_charge_type == "PrePaid":
         request_kwargs.update(
-            period=config.wuying_period,
-            period_unit=config.wuying_period_unit,
-            auto_pay=config.wuying_auto_pay,
-            auto_renew=config.wuying_auto_renew,
+            period=1 if monthly else config.wuying_period,
+            period_unit="Month" if monthly else config.wuying_period_unit,
+            auto_pay=True if monthly else config.wuying_auto_pay,
+            auto_renew=False if monthly else config.wuying_auto_renew,
         )
     request = ecd_models.CreateDesktopsRequest(**request_kwargs)
+    if before_submit:
+        await before_submit()
     resp = await _retry_throttled(
         lambda: client.create_desktops_async(request), "CreateDesktops"
     )
@@ -556,6 +561,21 @@ async def modify_entitlement(desktop_id: str, end_user_ids: list[str]) -> str | 
         lambda: ecd_client().modify_entitlement_async(request), "ModifyEntitlement"
     )
     return getattr(response.body, "request_id", None)
+
+
+async def disconnect_desktop_sessions(desktop_id: str, end_user_id: str) -> None:
+    """Disconnect the retained desktop's session without stopping/deleting it."""
+    from alibabacloud_ecd20200930 import models as ecd_models
+
+    request = ecd_models.DisconnectDesktopSessionsRequest(
+        region_id=get_config().wuying_region_id, pre_check=False,
+        sessions=[ecd_models.DisconnectDesktopSessionsRequestSessions(
+            desktop_id=desktop_id, end_user_id=end_user_id,
+        )],
+    )
+    await _retry_throttled(
+        lambda: ecd_client().disconnect_desktop_sessions_async(request), "DisconnectDesktopSessions"
+    )
 
 
 async def rebuild_desktop(

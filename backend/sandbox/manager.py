@@ -237,6 +237,7 @@ class SandboxManager:
                         api_key=sandbox.api_key,
                         base_url=sandbox.base_url,
                         user_scope=user_scope_for(user_id),
+                        workspace_id=owner if per_owner_route else None,
                     )
                 async with self._lock:
                     if self._project_map.get(key) is not sandbox:
@@ -309,6 +310,7 @@ class SandboxManager:
                 api_key=info.api_key or "",
                 base_url=getattr(provider, "client_base_url", None),
                 user_scope=user_scope_for(user_id),
+                workspace_id=owner if per_owner_route else None,
             )
 
             async with self._lock:

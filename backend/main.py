@@ -150,9 +150,13 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             log.warning(f"Failed to schedule video job recovery: {e}")
 
+    from sandbox.desktop_activation import desktop_activation_service
+    desktop_activation_service.start()
+
     log.info("OpenBox starting...")
     yield
     log.info("OpenBox shutting down, cleaning up...")
+    await desktop_activation_service.stop()
 
     if config.sandbox_provider == "wuying" and config.wuying_mode == "per_user":
         from sandbox.wuying_desktop_service import wuying_desktop_service
@@ -224,6 +228,13 @@ def create_app() -> FastAPI:
         version="0.1.0",
         lifespan=lifespan,
     )
+
+    from sandbox.entitlement import SandboxSubscriptionRequired
+    from fastapi.responses import JSONResponse
+
+    @application.exception_handler(SandboxSubscriptionRequired)
+    async def sandbox_subscription_required(_request, exc):
+        return JSONResponse(exc.payload, status_code=403)
 
     application.add_middleware(
         CORSMiddleware,

@@ -11,6 +11,7 @@ from auth.jwt import create_access_token, create_refresh_token, decode_refresh_t
 from auth.password import hash_password, verify_password, validate_password_strength
 from auth.ticket import create_ticket
 from auth.middleware import get_current_user
+from auth.workspace import get_workspace
 from core.identifier import generate_id
 from core.log import create_logger
 from db.repository.user_repo import PgUserRepo
@@ -404,8 +405,9 @@ async def logout(request: Request, response: Response, current_user: dict = Depe
 
 
 @router.post("/ticket")
-async def get_ticket(current_user: dict = Depends(get_current_user)):
-    ticket = await create_ticket(current_user["user_id"], current_user.get("role", "user"))
+async def get_ticket(current_user: dict = Depends(get_current_user), _workspace=Depends(get_workspace)):
+    ticket = await create_ticket(current_user["user_id"], current_user.get("role", "user"),
+        workspace_id=current_user.get("workspace_id"))
     return {"ticket": ticket}
 
 
