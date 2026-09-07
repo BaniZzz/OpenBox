@@ -260,3 +260,31 @@ Redis：`oauth:state:<state>`（600s）、`douyin:client_token:<client_key>`、`
 | 3 | Client Secret | 暂不重置。只进 gw2 `.env` |
 | 4 | 投稿视频直链 | 接受 OSS 签名 URL。桶用 **bossip 上海桶**（另一会话正在迁移桶，后续 openbox 全部用 bossip 上海桶）；本单代码只通过现有 OSS 客户端签 URL，不写死桶名 |
 | 5 | 多账号 | 接受：一个 workspace 可绑多个抖音号，按 open_id 去重 |
+
+---
+
+## 9. 执行记录
+
+### 9.1 2026-09-07 P0 + P1 代码落地（分支 `a5-auth-center`，从 main `ac038bb` 起）
+
+**后端**：`core/crypto.py`（通用 AES-GCM）、`db/models/{platform_account,publish_job,notification}.py` + 迁移 `a5c0d1e2f3a4`、`platforms/{base,errors,registry,service,tasks}.py`、`platforms/douyin/{client,provider,publish}.py`、`api/{platform_accounts,webhooks_douyin,notifications}.py`、`main.py` 注册、`internal_tasks` 注册 `platform_token_keepalive`（6 小时）、`core/config.py` 新增 `PUBLIC_BASE_URL / SECRETS_MASTER_KEY / DOUYIN_CLIENT_KEY / DOUYIN_CLIENT_SECRET / DOUYIN_REDIRECT_URI`。
+**前端**：侧栏"资源中心"下新增"授权中心"（`/app/auth-center`），`features/auth-center/**`（平台卡、账号行、投稿对话框、二维码用 `qrcode` 包在浏览器端渲染）、`auth-center.json` 双语。
+**单测**：`backend/tests/unit/test_platform_accounts.py` 15 条（签名与文档示例一致、schema、错误码映射、加密绑定 AAD、绑定/重绑/续期/失效通知/无 renew 权限/探活/解绑/投稿 staging/Webhook 验签与去重/过期）全绿；前端 `npm run check` 全绿（i18n 对齐、lint、tsc、209 条既有测试）。
+
+**本地浏览器验证**（SQLite + 临时 Redis + JWT 鉴权模式，真实 client_key + 占位 secret）：
+- 侧栏入口在"资源中心"正下方，Topbar 标题/副标题正确；平台卡显示能力标签与 195 天提示；空态/已授权/已失效三种账号行渲染正确。
+- 回跳 `?platform=douyin&bound=<id>` → toast「账号已绑定」并清掉 query。
+- 「检测」对一条塞入的假 token 账号：后端先调 `/oauth/userinfo/` 被拒 → 自动 `/oauth/refresh_token/` → **抖音真实返回 10010** → 行置 `expired`、按钮变「重新授权」、「发布到抖音」入口随之消失（没有 bound 账号）。
+- 解绑：确认框文案正确 → `DELETE` 200 → 行消失。
+- 投稿对话框：本地无 OSS，`/api/assets` 503 → 对话框显示「视频列表加载失败」（为此补了 `videosError` 状态）。二维码与 Webhook 回写只在单测里覆盖，真机链路留待 gw2。
+- 未做：深色模式截图（浏览器面板隐藏时无法截图）；无 renew 权限的真实返回。
+
+**顺带发现（未改）**：`backend/.openbox/skill_jobs.db` 被提交进了 git，且 schema 陈旧（users 无 `default_workspace_id`），单用户模式在干净 checkout 上起不来；建议单独提交把它从仓库移除并加 .gitignore。
+
+### 9.2 待办（部署与真机）
+1. gw2 `.env` 加 `DOUYIN_CLIENT_KEY / DOUYIN_CLIENT_SECRET / PUBLIC_BASE_URL=https://ai.bossipai.com.cn`（`DOUYIN_REDIRECT_URI` 留空即用默认路径）；`WUYING_CHANNEL_KEY` 已有则不用配 `SECRETS_MASTER_KEY`。
+2. 跑迁移 `a5c0d1e2f3a4`，部署后端与前端。
+3. 控制台填授权回调地址与 Webhook 地址（此时 `verify_webhook` 已能回 challenge），勾选 `create_video` 事件。
+4. 按 §6 AC-2 ～ AC-8 真机验收，截图进 `docs/evidence/`。
+5. P2：`platform_publish` 工具 + `douyin-publish` 技能 + `requires-platforms` 阻断。
+

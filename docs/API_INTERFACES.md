@@ -27,6 +27,7 @@
 12. [SSE 实时事件流](#12-sse-实时事件流) (1 个 + 17 种事件)
 13. [WebSocket 终端](#13-websocket-终端) (1 个)
 14. [Type 类型定义汇总](#14-type-类型定义汇总)
+15. [PlatformAccounts 授权中心](#15-platformaccounts-授权中心) (11 个 + 1 个 Webhook)
 
 **接口总计**: 33 个 HTTP + 1 个 SSE + 1 个 WebSocket = **35 个接口**
 
@@ -886,3 +887,70 @@ interface QuestionReply {
   answers: Record<string, string>
 }
 ```
+
+---
+
+## 15. PlatformAccounts 授权中心
+
+> 2026-09-07 新增，见 `docs/A5_AUTHORIZATION_CENTER.md`。除回调与 Webhook 外都要带 `Authorization` 与 `X-Workspace-Id`。
+> 错误响应形如 `{ "detail": { "code": "PLATFORM_…", "message": "…" } }`，同时带 `X-Error-Code` 头；前端按 `code` 查 `auth-center.json` 的 `errors.*` 文案。
+
+| 方法 | 路径 | 权限 | 说明 |
+|---|---|---|---|
+| GET | `/api/platforms` | 成员 | 平台目录：`{key, display, capabilities: ("login"\|"publish")[], configured, maxGrantDays}[]` |
+| GET | `/api/platform-accounts` | 成员 | 当前工作空间已绑定账号（不含任何 token 字段） |
+| POST | `/api/platform-accounts/{platform}/authorize` | owner/admin | → `{authorizeUrl, state}`，前端整页跳转 |
+| GET | `/api/platform-accounts/{platform}/callback?code&state&scopes` | 无鉴权 | 平台回跳；服务端换 token 后 302 到 `/app/auth-center?platform=…&bound=<id>` 或 `&error=<code>` |
+| POST | `/api/platform-accounts/{id}/probe` | 成员 | 用 access_token 读资料验证授权；失效则尝试刷新，再失败置 `expired` |
+| POST | `/api/platform-accounts/{id}/refresh` | owner/admin | 手动刷新/续期 |
+| DELETE | `/api/platform-accounts/{id}` | owner/admin | 解绑（软删 + 清 token） |
+| POST | `/api/platform-accounts/douyin/publish` | 成员 | `{file_asset_id, title?, hashtags?[], private_status? 0\|1\|2, download_type? 1\|2}` → `{job, schema}`；`schema` 是 `snssdk1128://openplatform/share?…`，前端渲染成二维码 |
+| GET | `/api/publish-jobs` | 成员 | 最近 50 条投稿记录 |
+| GET | `/api/publish-jobs/{id}` | 成员 | 轮询投稿状态：`pending\|published\|failed\|expired` |
+| GET / POST | `/api/notifications?unread=`、`/api/notifications/{id}/read` | 成员 | 站内通知（授权失效、投稿完成） |
+| POST | `/api/webhooks/douyin` | 抖音签名 | `verify_webhook` 回 `{challenge}`；`create_video` 按 `share_id` 回写投稿结果；`X-Douyin-Signature = sha1(client_secret + body)`，`Msg-Id` 去重 |
+
+### PlatformAccount
+
+```typescript
+interface PlatformAccount {
+  id: string
+  platform: string                  // "douyin"
+  authKind: "oauth" | "desktop_cookie"
+  externalId: string                // open_id
+  unionId: string | null
+  nickname: string | null
+  avatarUrl: string | null
+  scopes: string[]
+  status: "bound" | "expired" | "revoked"
+  accessExpiresAt: string | null
+  refreshExpiresAt: string | null
+  renewCount: number
+  renewalsLeft: number
+  lastRefreshAt: string | null
+  lastProbeAt: string | null
+  lastOkAt: string | null
+  lastError: string | null
+  boundAt: string | null
+  boundByUserId: string
+}
+
+interface PublishJob {
+  id: string
+  platform: string
+  platformAccountId: string | null
+  fileAssetId: string
+  title: string
+  hashtags: string[]
+  shareId: string | null
+  status: "pending" | "published" | "failed" | "expired"
+  itemId: string | null
+  videoId: string | null
+  fromOpenId: string | null
+  error: string | null
+  expiresAt: string | null
+  publishedAt: string | null
+  createdAt: string | null
+}
+```
+
