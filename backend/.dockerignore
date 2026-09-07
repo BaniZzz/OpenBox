@@ -12,3 +12,5 @@ tests/
 docs/
 *.log
 .DS_Store
+.openbox/*.db
+.openbox/*.db-*
