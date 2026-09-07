@@ -251,10 +251,12 @@ Redis：`oauth:state:<state>`（600s）、`douyin:client_token:<client_key>`、`
 
 ---
 
-## 8. 开工前需用户确认
+## 8. 开工前确认（2026-09-07 用户已拍板）
 
-1. 控制台"能力管理 > 内容能力 > 投稿能力"里 **`h5.share`、`open.get.ticket`、`aweme.share`** 三项是否都已开通（发一张截图）；`renew_refresh_token` 有没有（没有也能做，只是免扫码期从 195 天缩到 45 天）。
-2. 控制台"授权回调地址"填 `https://ai.bossipai.com.cn/api/platform-accounts/douyin/callback`，Webhook 填 `https://ai.bossipai.com.cn/api/webhooks/douyin`——由你在控制台操作。
-3. 是否先重置 Client Secret（建议是），新值直接配到 gw2 `.env`，不要再贴到聊天。
-4. 投稿视频的公网直链用 OSS 签名 URL（2 小时）——确认可接受。
-5. 一个 workspace 允许绑多个抖音号（按 open_id 去重）——确认。
+| # | 项 | 结论 |
+|---|---|---|
+| 1 | 投稿能力 scope | 控制台截图确认 `aweme.share`、`h5.share`、`open.get.ticket` 三项均"已通过"，免费额度各 100000 次/日；"抖音授权登录"与"抖音授权"均"已开通"。`renew_refresh_token` 未见，按无处理（免扫码期 45 天），后续可申请 |
+| 2 | 回调与 Webhook 地址 | 抖音控制台保存回调/Webhook 时会**先校验地址可达且返回正确**（Webhook 要回 challenge）。所以顺序必须是：**先把 P0/P1 的两个路由部署到 gw2，再去控制台填地址**。执行单里把"控制台配置"放在 gw2 部署之后 |
+| 3 | Client Secret | 暂不重置。只进 gw2 `.env` |
+| 4 | 投稿视频直链 | 接受 OSS 签名 URL。桶用 **bossip 上海桶**（另一会话正在迁移桶，后续 openbox 全部用 bossip 上海桶）；本单代码只通过现有 OSS 客户端签 URL，不写死桶名 |
+| 5 | 多账号 | 接受：一个 workspace 可绑多个抖音号，按 open_id 去重 |
