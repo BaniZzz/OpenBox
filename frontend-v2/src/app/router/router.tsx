@@ -16,6 +16,7 @@ const BillingRoute = lazy(() => import("@/routes/billing/BillingRoute"))
 const CronRoute = lazy(() => import("@/routes/cron/CronRoute"))
 const ResourcesRoute = lazy(() => import("@/routes/resources/ResourcesRoute"))
 const SkillsRoute = lazy(() => import("@/routes/skills/SkillsRoute"))
+const AuthCenterRoute = lazy(() => import("@/routes/auth-center/AuthCenterRoute"))
 const NotFoundRoute = lazy(() => import("@/routes/NotFoundRoute"))
 const InviteRoute = lazy(() => import("@/routes/invite/InviteRoute"))
 const AdminFleetRoute = lazy(() => import("@/routes/admin/AdminFleetRoute"))
@@ -65,6 +66,7 @@ export const router = createBrowserRouter([
           { path: routePatterns.cron, element: <CronRoute /> },
           { path: routePatterns.resources, element: <ResourcesRoute /> },
           { path: routePatterns.skills, element: <SkillsRoute /> },
+          { path: routePatterns.authCenter, element: <AuthCenterRoute /> },
           { path: routePatterns.adminFleet, element: <AdminFleetRoute /> },
         ],
       },

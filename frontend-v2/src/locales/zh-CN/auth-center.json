@@ -1,0 +1,97 @@
+{
+  "page": {
+    "title": "授权中心",
+    "subtitle": "把各平台账号授权给当前工作空间，供投稿与数据能力使用。"
+  },
+  "capability": {
+    "login": "登录授权",
+    "publish": "投稿"
+  },
+  "platform": {
+    "notConfigured": "本环境未配置该平台",
+    "grantHint": "扫码授权后最长 {{days}} 天内无需再次扫码；到期或在平台内取消授权后需要重新授权。",
+    "genericHint": "扫码授权后即可使用该平台的能力。",
+    "emptyManager": "还没有绑定账号，点击右上角「绑定账号」开始。",
+    "emptyMember": "还没有绑定账号，请联系工作空间管理员绑定。"
+  },
+  "actions": {
+    "bind": "绑定账号",
+    "reauthorize": "重新授权",
+    "probe": "检测",
+    "unbind": "解绑",
+    "publish": "发布到抖音"
+  },
+  "status": {
+    "bound": "已授权",
+    "expiring": "即将到期",
+    "expired": "已失效",
+    "revoked": "已解绑"
+  },
+  "account": {
+    "unnamed": "未命名账号",
+    "openId": "openid {{id}}…",
+    "validUntil": "授权有效至 {{date}}",
+    "renewalsLeft_one": "剩余自动续期 {{count}} 次",
+    "renewalsLeft_other": "剩余自动续期 {{count}} 次",
+    "needsReauth": "需要重新扫码授权",
+    "lastProbe": "上次检测 {{date}}"
+  },
+  "unbind": {
+    "title": "解绑这个账号？",
+    "body": "解绑后「{{name}}」的授权会从本工作空间移除；如需彻底取消，请在抖音「设置 › 账号与安全 › 授权管理」中操作。"
+  },
+  "publish": {
+    "title": "发布到抖音",
+    "intro": "选择资源中心里的一个视频，生成投稿二维码。用抖音扫码后，在抖音里确认发布。",
+    "video": "视频",
+    "pickVideo": "选择一个视频…",
+    "noVideos": "资源中心里没有可投稿的视频（mp4/mov，≤128 MB）",
+    "caption": "标题",
+    "captionPlaceholder": "最多 55 个字",
+    "hashtags": "话题",
+    "hashtagsPlaceholder": "用空格或逗号分隔，例如：装修 好物",
+    "privacy": "可见范围",
+    "privacyPublic": "所有人可见",
+    "privacyFriends": "好友可见",
+    "privacyPrivate": "仅自己可见",
+    "generate": "生成二维码",
+    "scanHint": "打开抖音 App，扫描二维码",
+    "scanSteps": "抖音会下载视频并打开发布页，在那里点「发布」。",
+    "waiting": "等待发布结果…",
+    "expiresIn": "二维码 {{time}} 后失效",
+    "noTracking": "本次未能获取投稿跟踪 id，发布后此处不会自动更新。",
+    "done": "已在抖音发布",
+    "itemId": "作品 id {{id}}",
+    "expired": "二维码已失效",
+    "expiredHint": "关闭后重新生成即可。",
+    "qrAlt": "抖音投稿二维码",
+    "videosError": "视频列表加载失败（对象存储未配置或不可用）"
+  },
+  "toast": {
+    "bound": "账号已绑定",
+    "unbound": "账号已解绑",
+    "probeOk": "授权正常",
+    "probeExpired": "授权已失效，请重新授权"
+  },
+  "state": {
+    "error": "加载失败",
+    "noPlatforms": "本环境还没有接入任何平台。"
+  },
+  "errors": {
+    "PLATFORM_ERROR": "操作失败，请稍后重试",
+    "PLATFORM_DENIED": "你在平台侧取消了授权",
+    "PLATFORM_STATE_INVALID": "授权链接已过期，请重新点击绑定",
+    "PLATFORM_NOT_CONFIGURED": "本环境未配置该平台",
+    "PLATFORM_AUTH_REQUIRED": "授权已失效，请重新授权",
+    "PLATFORM_API_ERROR": "平台接口返回错误，请稍后重试",
+    "PLATFORM_ACCOUNT_NOT_FOUND": "账号不存在",
+    "PLATFORM_UNKNOWN": "未知平台",
+    "PUBLISH_FILE_NOT_FOUND": "找不到该视频",
+    "PUBLISH_FILE_TYPE": "只支持 mp4/mov 视频",
+    "PUBLISH_FILE_TOO_LARGE": "视频超过抖音 128 MB 限制",
+    "PUBLISH_STAGE_FAILED": "视频准备失败，请重试",
+    "PUBLISH_JOB_NOT_FOUND": "投稿记录不存在",
+    "WORKSPACE_ROLE_REQUIRED": "只有工作空间管理员可以绑定或解绑账号",
+    "WORKSPACE_FORBIDDEN": "没有该工作空间的权限"
+  }
+}
