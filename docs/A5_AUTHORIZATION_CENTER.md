@@ -283,8 +283,9 @@ Redis：`oauth:state:<state>`（600s）、`douyin:client_token:<client_key>`、`
 
 ### 9.2 待办（部署与真机）
 1. ✅ 2026-09-07 15:42 已通过云助手把 `PUBLIC_BASE_URL / DOUYIN_CLIENT_KEY / DOUYIN_CLIENT_SECRET` 追加到 gw2 `/opt/openbox/config/backend.env`（备份 `backend.env.bak-20260907154232`；`WUYING_CHANNEL_KEY` 已有，不需要 `SECRETS_MASTER_KEY`；`DOUYIN_REDIRECT_URI` 留空走默认路径）。容器未重启，当时 gw2 镜像为 `20260907-subscription-129e758`，键在下次 `docker compose up -d` 时生效。
-2. 把 `a5-auth-center` 合进 main → EC2 `/opt/openbox/build-main` 构建 → 传 gw2 → `docker compose up -d`（启动自跑迁移 `a5c0d1e2f3a4`）。**部署前看一眼 gw2 `.env` 当前 tag，队友也在直接部署。**
-3. 控制台填授权回调地址与 Webhook 地址（此时 `verify_webhook` 已能回 challenge），勾选 `create_video` 事件。
+2. ✅ 2026-09-07 16:00 已合 main（`a043dea`，迁移改接 `a4b6c8d0e2f5` 之后）并以 `20260907-a5-a043dea` 先后部署 AWS 与 gw2；gw2 库升到 `a5c0d1e2f3a4`，备份 `backups/pre-a5-20260907155958.sql.gz`。公网已验：Webhook challenge、错签名 401、回调 302、前端含 auth-center 路由。详见 `docs/DEPLOY.md` 2026-09-07 条目。
+   验证账号：桌面 `ecd-glxi1nk433hliivri` 挂在 gw2 用户 `bbdwxh_admin` 的工作空间（owner）。
+3. ⏳ 控制台填授权回调地址 `https://ai.bossipai.com.cn/api/platform-accounts/douyin/callback` 与 Webhook `https://ai.bossipai.com.cn/api/webhooks/douyin`（`verify_webhook` 已能回 challenge），勾选 `create_video` 事件——用户操作。
 4. 按 §6 AC-2 ～ AC-8 真机验收，截图进 `docs/evidence/`。
 5. P2：`platform_publish` 工具 + `douyin-publish` 技能 + `requires-platforms` 阻断。
 

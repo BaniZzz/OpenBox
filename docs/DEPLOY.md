@@ -146,6 +146,15 @@ Logto SSO 的取值另见 [LOGTO_PROD.md](LOGTO_PROD.md)。
 | 源码 | 有 `/opt/openbox/src`（git checkout），可就地构建 | **无源码**，镜像从外部装载 |
 | 沙箱 | `SANDBOX_PROVIDER=wuying` | `SANDBOX_PROVIDER=wuying` |
 
+
+### 2026-09-07：A5 授权中心（抖音开放平台 OAuth + H5 投稿）
+
+- 两边统一标签 `20260907-a5-a043dea`，源码提交为 `main@a043dea`（含 origin/main 的订阅桌面工作 `129e758`/`579b3af`）。EC2 `/opt/openbox/build-main` 构建，`docker save | gzip | ssh gw2 docker load` 传输（约 47s）。
+- 数据库迁移 `a4b6c8d0e2f5 → a5c0d1e2f3a4`（新表 `platform_accounts`、`publish_jobs`、`notifications`），启动时自动执行；两边发布前均有 `backups/pre-a5-<戳>.sql.gz`。
+- gw2 `config/backend.env` 新增 `PUBLIC_BASE_URL`、`DOUYIN_CLIENT_KEY`、`DOUYIN_CLIENT_SECRET`（15:42 追加，随本次重启生效）；AWS 未配抖音键，`/api/platforms` 上该平台 `configured=false`，`/api/webhooks/douyin` 返回 503 `douyin not configured`，属预期。
+- 公网验证：`POST https://ai.bossipai.com.cn/api/webhooks/douyin` 的 `verify_webhook` 回 `{"challenge":…}`；错签名事件 401；`/api/platform-accounts/douyin/callback?state=bad` 302 到 `/app/auth-center?platform=douyin&error=PLATFORM_STATE_INVALID`；前端 `index-Bg0WoWVO.js` 含 `auth-center` 路由。
+- 顺带：`backend/.openbox/skill_jobs.db` 已从仓库移除并忽略（`d1f8bdc`）。
+
 ### 2026-09-06：支付宝 App Pay 服务端签名接口（上一版本记录）
 
 - 阿里云生产后端已更新为 `openbox-backend:20260906-app-pay-f9247f1`；在本机以 `--platform linux/amd64` 构建，镜像 manifest ID 为 `sha256:1094bd9f7cfa1092e5c34c75350983f7ccad5aa42bdafbd02da177f45849654f`。
