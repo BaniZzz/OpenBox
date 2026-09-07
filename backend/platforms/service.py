@@ -169,13 +169,13 @@ def job_to_public(row: PublishJob) -> dict:
 
 
 # ── Bind ───────────────────────────────────────────────────────────────────
-async def start_authorize(*, user_id: str, workspace_id: str, platform: str) -> dict:
+async def start_authorize(*, user_id: str, workspace_id: str, platform: str, call_app: bool = False) -> dict:
     provider = get_provider(platform)
     if not provider.info().configured:
         raise PlatformNotConfigured(f"{platform} is not configured on this deployment")
     state = secrets.token_urlsafe(32)
     await _remember_state(state, {"user_id": user_id, "workspace_id": workspace_id, "platform": platform})
-    return {"authorizeUrl": provider.build_authorize_url(state), "state": state}
+    return {"authorizeUrl": provider.build_authorize_url(state, call_app=call_app), "state": state}
 
 
 def _apply_grant(row: PlatformAccount, grant: TokenGrant, now: datetime) -> None:
@@ -625,7 +625,12 @@ async def handle_douyin_event(payload: dict) -> bool:
     now = _now()
     async with get_db_session() as db:
         job = (
-            await db.execute(select(PublishJob).where(PublishJob.share_id == share_id))
+            await db.execute(
+                select(PublishJob)
+                .where(PublishJob.share_id == share_id)
+                .order_by((PublishJob.status == "pending").desc(), PublishJob.created_at.desc())
+                .limit(1)
+            )
         ).scalar_one_or_none()
         if job is None:
             log.info("douyin create_video for unknown share_id=%s", share_id)

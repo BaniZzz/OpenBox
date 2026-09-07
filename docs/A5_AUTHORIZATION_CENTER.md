@@ -299,3 +299,12 @@ Redis：`oauth:state:<state>`（600s）、`douyin:client_token:<client_key>`、`
 
 未能在本地复现第 1 条（没有真机）；如换用官方序列化后仍丢标题，下一步是让用户提供手机系统与抖音版本，并对比 `get_share` 短链的表现。
 
+### 9.4 2026-09-07 P2：模型接入（`douyin_publish` 工具 + `douyin-publish` 技能）
+
+- **工具** `backend/tool/douyin_publish.py`，四个动作：`status`（列出工作空间绑定的抖音号、预计到期、是否可投稿）、`authorize`（生成带 `is_call_app=1` 的授权链接，服务端用 segno 出二维码 PNG 钉在回复里）、`publish`（复用 `service.create_publish_job`，把投稿二维码钉在回复里，返回 `job_id`）、`result`（查 `publish_jobs`）。身份只来自 `ToolContext`（`workspace_id` 取自会话行）；没有 bound 账号时返回结构化错误 `PLATFORM_AUTH_REQUIRED`，非 owner/admin 调 `authorize` 返回 `PLATFORM_ROLE_REQUIRED`。二维码作为 `transient` 的 `FileAsset` + `FilePart(relation.kind="qr_code")` 挂在回复上，不进资源中心。
+- **注册**：`tool/registry.py`、`AGENTS["build"].tools`、`BUILD_ONLY_WORKFLOW_TOOLS`（子代理不继承）。权限走默认 allow。
+- **技能** `backend/.openbox/skills/douyin-publish/SKILL.md`：status → 失效则 authorize 并等用户扫完再 status → 拿 asset_id（`share_file` 返回）→ 拟标题（≤55 字）与 3–5 个话题 → `question` 确认卡 → publish → 用户扫码发布 → result。`video-production/SKILL.md` 末尾改为指向 `douyin-publish`。
+- **依赖**：`segno>=1.6.6`（纯 Python 出 PNG，不需要 Pillow）。
+- **单测** `tests/unit/test_douyin_publish_tool.py` 6 条：注册与 build-only、技能 frontmatter、无绑定→authorize→publish 拒绝、member 不能 authorize、绑定后 publish/result/跨工作空间隔离、PNG 头。
+- 与原 A5 的 `requires-platforms` frontmatter 设计的差异：仓库已把技能字段与运行时解耦（2026-08-30），所以阻断放在工具内部（查 `platform_accounts`），frontmatter 只做文档。
+

@@ -75,17 +75,20 @@ class DouyinClient:
         return httpx.AsyncClient(base_url=OPEN_BASE, timeout=_TIMEOUT, transport=self._transport)
 
     # ── OAuth (user grants) ─────────────────────────────────────────────
-    def authorize_url(self, *, redirect_uri: str, state: str, scope: str = "user_info") -> str:
-        query = urlencode(
-            {
-                "client_key": self.client_key,
-                "response_type": "code",
-                "scope": scope,
-                "redirect_uri": redirect_uri,
-                "state": state,
-            }
-        )
-        return f"{AUTHORIZE_URL}?{query}"
+    def authorize_url(
+        self, *, redirect_uri: str, state: str, scope: str = "user_info", call_app: bool = False
+    ) -> str:
+        params = {
+            "client_key": self.client_key,
+            "response_type": "code",
+            "scope": scope,
+            "redirect_uri": redirect_uri,
+            "state": state,
+        }
+        if call_app:
+            # On a phone, try to open the Douyin app instead of the web QR page.
+            params["is_call_app"] = "1"
+        return f"{AUTHORIZE_URL}?{urlencode(params)}"
 
     async def exchange_code(self, code: str) -> dict:
         async with self._http() as http:

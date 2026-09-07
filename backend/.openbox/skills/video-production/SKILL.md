@@ -144,4 +144,4 @@ Captions use the accepted actual transcript, never the written line. Run `$S/bui
 - `references/model-guide.md` — selected-model discipline, references, duration and cost
 - `references/quality.md` — pathology, STT, duration acceptance and composition checks
 
-Publishing/posting is handled by another skill; this skill produces and delivers the file.
+Publishing/posting is handled by the `douyin-publish` skill (load it with the `skill` tool when the person wants the video on Douyin); this skill produces and delivers the file.

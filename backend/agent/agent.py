@@ -160,6 +160,7 @@ BUILD_ONLY_WORKFLOW_TOOLS = frozenset({
     "video_transcribe",
     "creator_context",
     "skill_manage",
+    "douyin_publish",
 })
 
 
@@ -175,7 +176,7 @@ AGENTS: dict[str, AgentDef] = {
             "web_fetch", "web_search", "cron", "view_image",
             "share_file", "computer", "browser_mode",
             "image_gen", "video_generate", "video_transcribe",
-            "creator_context", "skill_manage",
+            "creator_context", "skill_manage", "douyin_publish",
         ],
         max_steps=200,
         # prompt is None — dynamically selected based on model_id

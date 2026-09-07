@@ -75,11 +75,11 @@ class DouyinProvider:
             max_grant_days=MAX_GRANT_DAYS,
         )
 
-    def build_authorize_url(self, state: str) -> str:
+    def build_authorize_url(self, state: str, *, call_app: bool = False) -> str:
         uri = redirect_uri()
         if not uri:
             raise PlatformNotConfigured("DOUYIN_REDIRECT_URI or PUBLIC_BASE_URL must be set")
-        return self.client.authorize_url(redirect_uri=uri, state=state, scope=LOGIN_SCOPE)
+        return self.client.authorize_url(redirect_uri=uri, state=state, scope=LOGIN_SCOPE, call_app=call_app)
 
     async def exchange_code(self, code: str) -> TokenGrant:
         return _grant(await self.client.exchange_code(code))

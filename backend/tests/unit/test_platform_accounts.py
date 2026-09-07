@@ -121,8 +121,8 @@ class FakeProvider:
     def info(self):
         return ProviderInfo(key="douyin", display="抖音", capabilities=["login", "publish"], configured=True, max_grant_days=195)
 
-    def build_authorize_url(self, state):
-        return f"https://open.douyin.com/platform/oauth/connect/?state={state}"
+    def build_authorize_url(self, state, *, call_app=False):
+        return f"https://open.douyin.com/platform/oauth/connect/?state={state}" + ("&is_call_app=1" if call_app else "")
 
     async def exchange_code(self, code):
         self.exchanged.append(code)
@@ -309,16 +309,17 @@ class FakeOss:
 class FakeClient:
     client_key = "awo"
 
-    def __init__(self, short_link: str | None = None, short_link_error: Exception | None = None):
+    def __init__(self, short_link: str | None = None, short_link_error: Exception | None = None, share: str = "share-1"):
         self.short_link = short_link
         self.short_link_error = short_link_error
+        self.share = share
         self.get_share_bodies: list[dict] = []
 
     async def open_ticket(self):
         return "ticket-1"
 
     async def share_id(self, *, need_callback=True, default_hashtag=""):
-        return "share-1"
+        return self.share
 
     async def get_share_schema(self, body):
         self.get_share_bodies.append(body)
