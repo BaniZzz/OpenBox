@@ -5,7 +5,29 @@
 
 Logto SSO 的取值另见 [LOGTO_PROD.md](LOGTO_PROD.md)。
 
-## 当前生产版本：2026-09-06 Logto 完整退出修复
+## 当前生产版本：2026-09-07 舰队页显示实时 ECD 绑定用户
+
+- 阿里云 gw2 已部署统一标签 `20260907-a3-1c242da`，源码提交为
+  `1c242da`。后端镜像 ID 为
+  `sha256:a0ecd1a9a7d0b5fc880366665c5b46f8606e5b6818bf6d222024b7c732294a3c`，
+  前端镜像 ID 为
+  `sha256:d787f253315811ad34b272fcd0e6a889380e7a15cdc4dcc3927465bf9b001364`。
+- `/admin/fleet` 的桌面表新增“ECD 绑定用户”：绑定关系实时读取 ECD
+  entitlement，用户名优先关联 OpenBox workspace 所属用户，外部账号回退到 ECD
+  EndUser 昵称；无法关联时保留 EndUser ID。ECD 读取失败显示“未知”，不会把 DB
+  历史字段冒充实时状态。
+- 本次没有数据库迁移，发布后仍为 `f3a5b7c9d1e4 (head)`。相关后端 12 项测试、
+  前端 206 项测试及 i18n/lint/typecheck 通过。生产真实管理员请求返回 200，20 条
+  桌面记录中当前 2 个 ECD 绑定均成功解析出用户名；匿名舰队接口仍返回 401，四个
+  compose 服务均 healthy。
+- 有效发布备份在
+  `/opt/openbox/backups/20260907-a3-1c242da/activation-094023/`，数据库 dump
+  SHA-256 为
+  `45892477e6be04e0e4b34eb4dd721946178c89f0334d6c847cb81c57e2d7f543`；
+  回滚标签为 `20260907-main-61227cc`。首次宿主机校验工具缺失产生的未完成备份已
+  改名为 `incomplete-093956`，不得用于回滚。
+
+## 上一生产版本：2026-09-06 Logto 完整退出修复
 
 - 阿里云生产统一标签已更新为
   `20260906-logto-logout3-3586742`。后端镜像 ID 为
