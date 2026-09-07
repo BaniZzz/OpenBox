@@ -1283,6 +1283,8 @@ def test_video_skill_teaches_craft_and_leaves_enforcement_to_the_tools():
     # A dependency declaration, not a grant: loading a skill never widens the
     # callable tool set (see docs/SKILL_TOOL_DECOUPLING_PLAN.md).
     assert set(metadata["allowed-tools"]) == {
+        # C5 起三个必停点都用 question 出卡，技能因此依赖它。
+        "question",
         "video_generate",
         "video_transcribe",
         "image_gen",
