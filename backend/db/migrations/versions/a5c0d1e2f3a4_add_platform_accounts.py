@@ -4,7 +4,7 @@
 first), publish jobs for the H5 share flow, and in-app notifications.
 
 Revision ID: a5c0d1e2f3a4
-Revises: f3a5b7c9d1e4
+Revises: a4b6c8d0e2f5
 Create Date: 2026-09-07 18:00:00.000000
 """
 from typing import Sequence, Union
@@ -15,7 +15,7 @@ import sqlalchemy as sa
 
 # revision identifiers
 revision: str = 'a5c0d1e2f3a4'
-down_revision: Union[str, None] = 'f3a5b7c9d1e4'
+down_revision: Union[str, None] = 'a4b6c8d0e2f5'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
