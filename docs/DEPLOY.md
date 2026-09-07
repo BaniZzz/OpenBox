@@ -5,7 +5,27 @@
 
 Logto SSO 的取值另见 [LOGTO_PROD.md](LOGTO_PROD.md)。
 
-## 当前生产版本：2026-09-07 用户视频模型强约束
+## 当前生产版本：2026-09-07 环境角标与 10:22 短暂 502 复盘
+
+- 阿里云 gw2 当前统一标签为 `20260907-main-33edc66`，源码提交为
+  `33edc66`（包含此前 `acbc1b2` 的视频模型强约束）。后端 image ID 为
+  `sha256:7c912f8a019ad0e1a3949aa4fdfe6b23fe659982c05aed6b5fb7be370c11b665`，
+  前端 image ID 为
+  `sha256:b4ec35d1d7ad41e125c0fe6f8de279a4dc22035b98627568f430f4c265816854`；
+  `/api/environment` 返回 `staging`。
+- 10:22 发布时执行了整栈 `docker compose up -d`，唯一的 backend/frontend
+  被同时替换。backend 创建于 10:22:02、启动于 10:22:14；frontend 创建于
+  10:22:04、启动于 10:22:30。gw2 的 `:80` 在旧 frontend 停止与新 frontend
+  启动之间没有可用容器，腾讯 Lighthouse 前置 Nginx 因 upstream 不可达短暂返回
+  502。根因是**单实例 Compose 的发布断档**，不是应用持续崩溃、数据库故障或迁移失败。
+- 10:24 后连续 12 轮公网首页与 `/api/auth/logto/config` 探测全部为 200；两个容器
+  均为 healthy、`RestartCount=0`，会话、账单、舰队与 WebSocket 请求正常。数据库仍为
+  `f3a5b7c9d1e4 (head)`，无需回滚。
+- 本次发布没有留下独立的版本化激活备份；最近的有效备份仍是
+  `/opt/openbox/backups/20260907-video-model-acbc1b2/activation-101224/`。后续发布必须先
+  备份，再按下文“发布可用性要求”逐服务切换，禁止直接无差别重建整栈。
+
+## 上一生产版本：2026-09-07 用户视频模型强约束
 
 - 阿里云 gw2 已部署统一标签 `20260907-video-model-acbc1b2`，源码提交为
   `acbc1b2`。后端 `linux/amd64` 镜像 ID 为
@@ -244,10 +264,32 @@ cd /opt/openbox
 cp config/backend.env config/backend.env.bak-$(date +%Y%m%d%H%M%S)
 cp .env .env.bak-$(date +%Y%m%d%H%M%S)
 sed -i "s/^OPENBOX_IMAGE_TAG=.*/OPENBOX_IMAGE_TAG=<TAG>/" .env
-docker compose up -d
+docker compose up -d --no-deps <实际变更的服务>
 ```
 
 **用完请删除 OSS 临时对象。**
+
+### 发布可用性要求
+
+当前 gw2 是单机 Compose：frontend 独占宿主机 `:80`，backend 也只有一个实例。因此
+`docker compose up -d` 同时替换 backend/frontend 时一定存在无 upstream 的窗口，公网会
+短暂 502。2026-09-07 10:22 已实际发生一次。发布必须遵守：
+
+1. **禁止例行发布直接执行裸 `docker compose up -d`。** postgres/redis 不得跟随应用
+   发布重建，只允许显式指定真正变更的服务。
+2. 仅后端变更时执行
+   `docker compose up -d --no-deps backend`，轮询 backend health 到 healthy 后再做公网 API
+   验证；不要因为统一 tag 而重建内容未变化的 frontend。
+3. 仅前端变更时只替换 frontend。当前固定 `:80` 的单实例拓扑仍会有短暂断档，发布前应
+   明确维护窗口；替换后必须等 frontend healthy，再验证公网首页与静态资源。
+4. 前后端都变更时按 **backend → 等待 healthy → frontend → 等待 healthy** 串行切换，
+   不得同时重建。该做法只能缩短并隔离断档，不能实现真正零停机。
+5. 每次切换前创建配置与数据库的版本化备份，并记录旧 tag；切换期间持续探测首页和一个
+   API，任一服务未在预期时间内 healthy 就立即恢复旧 tag。
+
+彻底解决方案是把 gw2 入口改为**宿主机稳定 Nginx + 蓝绿应用端口**（或迁移到支持至少
+2 个副本滚动更新的编排平台）：新版本先在备用端口启动并通过 health check，再原子切换
+upstream、reload Nginx，最后停止旧版本。完成蓝绿前，前端发布不能宣称零停机。
 
 ### 验证
 
