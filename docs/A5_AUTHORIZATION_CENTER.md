@@ -289,3 +289,13 @@ Redis：`oauth:state:<state>`（600s）、`douyin:client_token:<client_key>`、`
 4. 按 §6 AC-2 ～ AC-8 真机验收，截图进 `docs/evidence/`。
 5. P2：`platform_publish` 工具 + `douyin-publish` 技能 + `requires-platforms` 阻断。
 
+### 9.3 2026-09-07 真机反馈修正（第二版）
+
+用户在 gw2 用真实账号跑通绑定与投稿后反馈两点：
+
+1. **扫码后标题/话题没带过去。** 对照抖音官方 `dy_open_util.serialize`（`dy_open_util_v0.0.6.umd.js`）：它按键排序、键值都用 `encodeURIComponent`（空格 `%20`），而我们原来用 Python `urlencode`（空格 `+`），且多传了 `share_to_type/private_status/download_type` 三个旧版本不认识的键。修正：`publish.py` 改为与官方一致的序列化；话题除 `hashtag_list`（发布页话题 chips）外再以 `title_hashtag_list` 写进标题末尾；`private_status/download_type` 只在非默认值时发送。
+   另外发现文档里有服务端接口 **`POST /api/douyin/v1/schema/get_share/`**（scope `jump.basic`，控制台"能力管理 › 内容管理 › 获取跳转到抖音链接"）：参数以 JSON 结构化传给抖音，由抖音生成**短链** schema，二维码密度大幅降低。现在投稿优先走它，应用没有该权限（28001018/2190004）时回退到本地签名 schema；接口响应多返回 `schemaSource: "get_share" | "local"`，`publish_jobs.error` 为 `schema_source=local` 时表示回退。**需要用户到控制台申请 `jump.basic`。**
+2. **需要预计到期时间。** 后端 `to_public` 新增 `estimatedExpiresAt` = `refresh_expires_at + 30 天 × 剩余续期次数`（应用被告知无 `renew_refresh_token` 权限时就等于 `refresh_expires_at`）；账号行第一行显示"预计到期 X（约 N 天后需重新扫码）"，第二行保留"当前授权有效至"与剩余续期次数。
+
+未能在本地复现第 1 条（没有真机）；如换用官方序列化后仍丢标题，下一步是让用户提供手机系统与抖音版本，并对比 `get_share` 短链的表现。
+

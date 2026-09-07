@@ -19,7 +19,13 @@ from db.models.notification import Notification
 from db.models.platform_account import PlatformAccount
 from db.models.publish_job import PublishJob
 from platforms.base import TokenGrant
-from platforms.douyin.publish import ALLOWED_VIDEO_MIMES, MAX_VIDEO_BYTES, build_share_schema
+from platforms.douyin.publish import (
+    ALLOWED_VIDEO_MIMES,
+    MAX_VIDEO_BYTES,
+    build_share_schema,
+    clean_hashtags,
+    get_share_payload,
+)
 from platforms.errors import PlatformApiError, PlatformAuthRequired, PlatformError, PlatformNotConfigured
 from platforms.registry import get_provider
 
@@ -87,6 +93,28 @@ async def _consume_state(state: str) -> dict | None:
 
 
 # ── Public shape ───────────────────────────────────────────────────────────
+#: How long one renew_refresh_token buys, per the docs.
+RENEWAL_EXTENSION = timedelta(days=30)
+
+
+def estimated_expiry(row: PlatformAccount) -> datetime | None:
+    """When the person will have to scan again if every automatic renewal succeeds.
+
+    refresh_expires_at is the hard stop for the current refresh token; each of
+    the remaining renewals pushes it out another 30 days. If the app has been
+    told it lacks the renewal permission, the current expiry is the answer.
+    """
+    if row.status != "bound":
+        return None
+    base = _aware(row.refresh_expires_at)
+    if base is None:
+        return None
+    if row.last_error and "renew_refresh_token" in row.last_error:
+        return base
+    renewals_left = max(0, MAX_RENEWALS - (row.renew_count or 0))
+    return base + RENEWAL_EXTENSION * renewals_left
+
+
 def to_public(row: PlatformAccount) -> dict:
     def iso(when: datetime | None) -> str | None:
         aware = _aware(when)
@@ -96,6 +124,7 @@ def to_public(row: PlatformAccount) -> dict:
         "id": row.id,
         "platform": row.platform,
         "authKind": row.auth_kind,
+        "estimatedExpiresAt": iso(estimated_expiry(row)),
         "externalId": row.external_id,
         "unionId": row.union_id,
         "nickname": row.nickname,
@@ -505,16 +534,34 @@ async def create_publish_job(
             log.warning("douyin share_id unavailable code=%s", exc.platform_code)
             share_id = None
 
-        schema = build_share_schema(
-            client_key=client.client_key,
-            ticket=ticket,
-            video_url=video_url,
-            share_id=share_id,
-            title=title,
-            hashtags=hashtags or [],
-            private_status=private_status,
-            download_type=download_type,
-        )
+        # Prefer Douyin's own short-link schema (scope jump.basic): the QR code
+        # is far less dense and the parameters are packed by the platform, not
+        # by us. Fall back to the locally signed schema when the app lacks it.
+        schema_source = "get_share"
+        try:
+            schema = await client.get_share_schema(
+                get_share_payload(
+                    ticket=ticket,
+                    video_url=video_url,
+                    share_id=share_id,
+                    expire_at=int((now + timedelta(seconds=PUBLISH_TTL_SECONDS)).timestamp()),
+                    title=title,
+                    hashtags=hashtags or [],
+                )
+            )
+        except PlatformError as exc:
+            log.info("douyin get_share unavailable (%s); using local schema", exc)
+            schema_source = "local"
+            schema = build_share_schema(
+                client_key=client.client_key,
+                ticket=ticket,
+                video_url=video_url,
+                share_id=share_id,
+                title=title,
+                hashtags=hashtags or [],
+                private_status=private_status,
+                download_type=download_type,
+            )
         job = PublishJob(
             id=job_id,
             workspace_id=workspace_id,
@@ -522,8 +569,9 @@ async def create_publish_job(
             platform="douyin",
             file_asset_id=asset.id,
             title=title[:255],
-            hashtags=[t for t in (hashtags or []) if t],
+            hashtags=clean_hashtags(hashtags),
             share_id=share_id,
+            error=None if schema_source == "get_share" else "schema_source=local",
             status="pending",
             expires_at=now + timedelta(seconds=PUBLISH_TTL_SECONDS),
             created_at=now,

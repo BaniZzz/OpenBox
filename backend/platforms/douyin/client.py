@@ -193,6 +193,21 @@ class DouyinClient:
             raise PlatformApiError(-1, "share_id missing in response")
         return share
 
+    async def get_share_schema(self, body: dict) -> str:
+        """Short-link schema from Douyin (scope jump.basic); raises when not granted."""
+        token = await self.client_token()
+        async with self._http() as http:
+            resp = await http.post(
+                "/api/douyin/v1/schema/get_share/",
+                json=body,
+                headers={"access-token": token, "content-type": "application/json"},
+            )
+        data = _check(resp.json())
+        schema = str(data.get("schema") or "")
+        if not schema:
+            raise PlatformApiError(-1, "schema missing in get_share response")
+        return schema
+
     # ── H5 share signing (pure functions, kept here for one place to test) ──
     @staticmethod
     def sign_share(ticket: str, nonce_str: str, timestamp: str) -> str:

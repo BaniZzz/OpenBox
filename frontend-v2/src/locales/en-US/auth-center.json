@@ -30,11 +30,12 @@
   "account": {
     "unnamed": "Unnamed account",
     "openId": "openid {{id}}…",
-    "validUntil": "Valid until {{date}}",
+    "validUntil": "Current grant valid until {{date}}",
     "renewalsLeft_one": "{{count}} automatic renewal left",
     "renewalsLeft_other": "{{count}} automatic renewals left",
     "needsReauth": "Needs a new scan",
-    "lastProbe": "Last checked {{date}}"
+    "lastProbe": "Last checked {{date}}",
+    "estimatedExpiry": "Expected expiry {{date}} (new scan in about {{days}} days)"
   },
   "unbind": {
     "title": "Disconnect this account?",

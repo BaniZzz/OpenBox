@@ -223,7 +223,11 @@ async def publish_to_douyin(
         "publish.create", "publish_job", job.id,
         {"platform": "douyin", "file_asset_id": job.file_asset_id, "share_id": job.share_id}, request,
     )
-    return {"job": service.job_to_public(job), "schema": schema}
+    return {
+        "job": service.job_to_public(job),
+        "schema": schema,
+        "schemaSource": "local" if (job.error or "").startswith("schema_source=local") else "get_share",
+    }
 
 
 @jobs_router.get("")

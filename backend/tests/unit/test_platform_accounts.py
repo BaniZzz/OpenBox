@@ -38,24 +38,41 @@ def test_share_schema_carries_signed_fields_and_hashtags():
     schema = build_share_schema(
         client_key="awo",
         ticket="tk",
-        video_url="https://bucket.oss-cn-shanghai.aliyuncs.com/publish/x/video.mp4?Expires=1",
+        video_url="https://bucket.oss-cn-shanghai.aliyuncs.com/publish/x/video.mp4?Expires=1&Signature=a%2Fb",
         share_id="share-1",
-        title="测试标题",
-        hashtags=["#装修", "好物", ""],
+        title="测试 标题",
+        hashtags=["#装修", "好物", "", "装修"],
         nonce_str="n1",
         timestamp="1700000000",
     )
     parsed = urlparse(schema)
     assert parsed.scheme == "snssdk1128" and parsed.netloc == "openplatform" and parsed.path == "/share"
+    # Same wire format as dy_open_util.serialize: sorted keys, encodeURIComponent.
+    keys = [part.split("=")[0] for part in parsed.query.split("&")]
+    assert keys == sorted(keys)
+    assert "title=%E6%B5%8B%E8%AF%95%20%E6%A0%87%E9%A2%98" in schema and "+" not in parsed.query.replace("%2B", "")
     q = {k: v[0] for k, v in parse_qs(parsed.query).items()}
     assert q["share_type"] == "h5"
     assert q["client_key"] == "awo"
     assert q["state"] == "share-1"
     assert q["share_to_publish"] == "1"
     assert q["signature"] == DouyinClient.sign_share("tk", "n1", "1700000000")
-    assert q["video_path"].startswith("https://bucket.oss-cn-shanghai.aliyuncs.com/")
+    assert q["video_path"] == "https://bucket.oss-cn-shanghai.aliyuncs.com/publish/x/video.mp4?Expires=1&Signature=a%2Fb"
     assert json.loads(q["hashtag_list"]) == ["装修", "好物"]
-    assert q["title"] == "测试标题"
+    assert json.loads(q["title_hashtag_list"]) == [{"name": "装修", "start": 5}, {"name": "好物", "start": 5}]
+    assert q["title"] == "测试 标题"
+    # Defaults are not sent, so an older app never sees an unknown key.
+    assert "private_status" not in q and "download_type" not in q and "share_to_type" not in q
+
+
+def test_share_schema_sends_non_default_switches_only():
+    schema = build_share_schema(
+        client_key="awo", ticket="tk", video_url="https://x/v.mp4", share_id=None,
+        private_status=1, download_type=2, nonce_str="n", timestamp="1700000000",
+    )
+    q = {k: v[0] for k, v in parse_qs(urlparse(schema).query).items()}
+    assert q["private_status"] == "1" and q["download_type"] == "2"
+    assert "state" not in q and "title" not in q and "hashtag_list" not in q
 
 
 def test_response_check_maps_platform_error_codes():
@@ -173,6 +190,8 @@ async def test_bind_stores_encrypted_tokens_and_profile(fake_platform):
     public = service.to_public(row)
     assert "access_token" not in json.dumps(public) and "ciphertext" not in json.dumps(public)
     assert public["scopes"] == ["user_info"] and public["renewalsLeft"] == 5
+    # 30 days of refresh token + 5 renewals × 30 days = the "scan again by" date.
+    assert public["estimatedExpiresAt"] == (NOW + timedelta(days=30 + 150)).isoformat()
 
     # The state is single-use.
     with pytest.raises(PlatformError) as exc:
@@ -246,6 +265,8 @@ async def test_keep_alive_tolerates_missing_renew_permission(fake_platform):
         db_row = (await db.execute(select(PlatformAccount).where(PlatformAccount.id == row.id))).scalar_one()
         assert db_row.status == "bound" and db_row.renew_count == 0
         assert "renew_refresh_token" in (db_row.last_error or "")
+        # Without the renewal permission the estimate collapses to the hard expiry.
+        assert service.to_public(db_row)["estimatedExpiresAt"] == service.to_public(db_row)["refreshExpiresAt"]
 
 
 @pytest.mark.asyncio
@@ -288,16 +309,27 @@ class FakeOss:
 class FakeClient:
     client_key = "awo"
 
+    def __init__(self, short_link: str | None = None, short_link_error: Exception | None = None):
+        self.short_link = short_link
+        self.short_link_error = short_link_error
+        self.get_share_bodies: list[dict] = []
+
     async def open_ticket(self):
         return "ticket-1"
 
     async def share_id(self, *, need_callback=True, default_hashtag=""):
         return "share-1"
 
+    async def get_share_schema(self, body):
+        self.get_share_bodies.append(body)
+        if self.short_link_error:
+            raise self.short_link_error
+        return self.short_link or "snssdk1128://webview?url=short"
+
 
 @pytest.mark.asyncio
 async def test_publish_stages_non_ascii_key_and_webhook_completes_job(fake_platform, monkeypatch):
-    fake_platform.client = FakeClient()
+    fake_platform.client = FakeClient(short_link_error=PlatformApiError(28001018, "应用未获得该能力"))
     async with get_db_session() as db:
         db.add(
             FileAsset(
@@ -332,6 +364,12 @@ async def test_publish_stages_non_ascii_key_and_webhook_completes_job(fake_platf
     )
     assert oss.copied == [("assets/user-1/asset-1/成片.mp4", f"publish/{job.id}/video.mp4")]
     assert job.status == "pending" and job.share_id == "share-1"
+    # get_share was tried with the structured body, then the local schema took over.
+    body = fake_platform.client.get_share_bodies[0]
+    assert body["title"] == "标题" and body["hashtag_list"] == ["装修"] and body["state"] == "share-1"
+    assert body["share_to_publish"] == 1 and body["client_ticket"] == "ticket-1"
+    assert body["expire_at"] == int((NOW + timedelta(hours=1)).timestamp())
+    assert job.error == "schema_source=local"
     q = {k: v[0] for k, v in parse_qs(urlparse(schema).query).items()}
     assert q["state"] == "share-1" and q["video_path"].endswith(f"publish/{job.id}/video.mp4?Expires=7200")
 
@@ -355,6 +393,24 @@ async def test_publish_stages_non_ascii_key_and_webhook_completes_job(fake_platf
     done = await service.get_job(job.id, "ws-1")
     assert done.status == "published" and done.item_id == "item-9" and done.platform_account_id == account.id
     assert await service.handle_douyin_event({"event": "create_video", "content": {"share_id": "unknown"}}) is False
+
+
+@pytest.mark.asyncio
+async def test_publish_prefers_platform_short_link(fake_platform):
+    fake_platform.client = FakeClient(short_link="snssdk1128://webview?url=https%3A%2F%2Fopen.douyin.com%2Fslink")
+    async with get_db_session() as db:
+        db.add(
+            FileAsset(
+                id="asset-2", user_id="user-1", workspace_id="ws-1", name="clip.mp4",
+                oss_key="assets/user-1/asset-2/clip.mp4", mime="video/mp4", size=1024,
+                status="ready", created_at=NOW,
+            )
+        )
+        await db.commit()
+    job, schema = await service.create_publish_job(
+        oss=FakeOss(), user_id="user-1", workspace_id="ws-1", file_asset_id="asset-2", title="t"
+    )
+    assert schema.startswith("snssdk1128://webview?url=") and job.error is None
 
 
 @pytest.mark.asyncio
