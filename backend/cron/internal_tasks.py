@@ -170,3 +170,7 @@ def register_builtin_tasks() -> None:
         run_ensure_prewarm_task,
     )
     register("renew_expiring", 24 * 60 * 60, run_renew_expiring_task)
+
+    from platforms.tasks import register_platform_tasks
+
+    register_platform_tasks()
