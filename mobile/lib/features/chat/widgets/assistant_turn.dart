@@ -69,7 +69,8 @@ class AssistantTurn extends ConsumerWidget {
     // yet. Once reasoning or a tool call has arrived the turn is visibly
     // working, and each of those blocks carries its own live heading, so a
     // second 正在思考中 underneath is both redundant and wrong.
-    final hasActivity = content.hasFinal ||
+    final hasActivity =
+        content.hasFinal ||
         content.progress.isNotEmpty ||
         content.workEvents.isNotEmpty ||
         content.resultGroups.isNotEmpty ||
@@ -84,7 +85,8 @@ class AssistantTurn extends ConsumerWidget {
     final thinkingLive =
         preAnswer && (turn.thinkingStreaming || turn.hasThinking);
     final toolsLive = streaming && (turn.toolsStreaming || !content.hasFinal);
-    final showFinalLabel = content.progress.isNotEmpty ||
+    final showFinalLabel =
+        content.progress.isNotEmpty ||
         content.workEvents.isNotEmpty ||
         turn.hasTools ||
         turn.todo != null ||
@@ -94,16 +96,8 @@ class AssistantTurn extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (turn.hasProcess)
-          ProcessTrace(
-            turn: turn,
-            active: preAnswer,
-          ),
-        if (turn.hasThinking)
-          ThinkingTrace(
-            turn: turn,
-            active: thinkingLive,
-          ),
+        if (turn.hasProcess) ProcessTrace(turn: turn, active: preAnswer),
+        if (turn.hasThinking) ThinkingTrace(turn: turn, active: thinkingLive),
         // Web order: the task card sits between thinking and the (loose)
         // tool chain, above the prose.
         if (turn.todo != null)
@@ -114,19 +108,14 @@ class AssistantTurn extends ConsumerWidget {
             onStop: onStop,
             editable: todoEditable,
           ),
-        if (turn.hasTools)
-          ToolChainTrace(
-            turn: turn,
-            active: toolsLive,
-          ),
-        WorkLogTrace(
-          events: content.workEvents,
-          active: preAnswer,
-          defaultOpen: content.incomplete,
-        ),
+        if (turn.hasTools) ToolChainTrace(turn: turn, active: toolsLive),
         SkillJobReceipts(parts: [for (final m in turn.messages) ...m.parts]),
+        WorkLogTrace(events: content.workEvents, active: preAnswer),
         if (streaming && !hasActivity)
-          Align(alignment: Alignment.centerLeft, child: ThinkingRow(retry: retry))
+          Align(
+            alignment: Alignment.centerLeft,
+            child: ThinkingRow(retry: retry),
+          )
         else if (content.hasFinal) ...[
           if (showFinalLabel)
             Padding(
@@ -142,8 +131,7 @@ class AssistantTurn extends ConsumerWidget {
             ),
           MarkdownView(content.finalText, streaming: streaming),
         ],
-        if (content.incomplete && turn.error == null)
-          const _IncompleteNotice(),
+        if (content.incomplete && turn.error == null) const _IncompleteNotice(),
         if (turn.error != null && !streaming)
           InlineErrorCard(
             message: _errorMessage(i18n, turn.error!),

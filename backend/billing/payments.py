@@ -138,6 +138,41 @@ async def continue_order(*, workspace_id: str, user_id: str, order_id: str) -> d
         return order_view(order)
 
 
+async def create_app_checkout(*, workspace_id: str, user_id: str, order_id: str) -> dict:
+    """Create an opaque native-SDK payload without trusting SDK callbacks.
+
+    App payloads are intentionally ephemeral: persisting them in checkout_url
+    would expose a non-URL value to web clients and unnecessarily retain a signed
+    request. The merchant order id keeps repeated calls idempotent upstream.
+    """
+    async with get_db_session() as db:
+        order = await db.get(PaymentOrder, order_id)
+        if order is None or order.workspace_id != workspace_id or order.user_id != user_id:
+            raise BillingError("PAYMENT_ORDER_NOT_FOUND", "Order not found")
+        if order.status == "cancelled":
+            raise BillingError("PAYMENT_ORDER_CANCELLED", "This payment order is closed")
+        if order.status == "paid":
+            return {"order": order_view(order), "provider": order.provider, "sdk_payload": None}
+        provider_name, amount_fen = order.provider, order.amount_fen
+    provider = get_provider(provider_name)
+    creator = getattr(provider, "create_app_checkout", None)
+    if not callable(creator):
+        raise BillingError("PAYMENT_UNAVAILABLE", "This channel does not support native app checkout")
+    checkout = await creator(order_id=order_id, amount_fen=amount_fen,
+                             callback_url=callback_url(provider_name))
+    if checkout.provider_order_id != order_id:
+        raise BillingError("PAYMENT_INVALID_CHECKOUT", "Payment channel returned a different order")
+    async with get_db_session() as db:
+        await lock_balance(db, workspace_id)
+        order = await db.get(PaymentOrder, order_id)
+        if order.status == "cancelled":
+            raise BillingError("PAYMENT_ORDER_CANCELLED", "This payment order is closed")
+        if order.status == "paid":
+            return {"order": order_view(order), "provider": provider_name, "sdk_payload": None}
+        order.provider_order_id = checkout.provider_order_id
+        return {"order": order_view(order), "provider": provider_name, "sdk_payload": checkout.payload}
+
+
 async def refresh_order(*, workspace_id: str, user_id: str, order_id: str) -> dict:
     """Explicit recovery if an asynchronous notification has not arrived."""
     async with get_db_session() as db:

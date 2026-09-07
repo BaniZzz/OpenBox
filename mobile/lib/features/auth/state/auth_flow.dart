@@ -1,13 +1,11 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:logto_dart_sdk/logto_dart_sdk.dart';
 
 import '../../../shared/api/auth_store.dart';
+import '../../../shared/api/logto_session.dart';
 import '../../../shared/api/providers.dart';
 import '../../../shared/appearance/appearance_store.dart';
-import '../../../shared/config/env.dart';
 import '../../../shared/models/auth_user.dart';
 import '../../../shared/models/json.dart';
-import '../api/logto.dart';
 
 /// Login/register orchestration, mirroring frontend-v2
 /// `features/auth/api/auth.ts` (`useLogin`/`useRegister`/`useCompleteAuth`).
@@ -18,22 +16,30 @@ class AuthFlow {
   final Ref _ref;
 
   Future<void> login(String username, String password) async {
-    final resp = await _ref.read(apiDioProvider).post<Map<String, dynamic>>(
-      '/api/auth/login',
-      data: {'username': username, 'password': password},
-    );
+    final resp = await _ref
+        .read(apiDioProvider)
+        .post<Map<String, dynamic>>(
+          '/api/auth/login',
+          data: {'username': username, 'password': password},
+        );
     await _completeAuth(resp.data ?? const {});
   }
 
-  Future<void> register(String username, String password, {String? email}) async {
-    final resp = await _ref.read(apiDioProvider).post<Map<String, dynamic>>(
-      '/api/auth/register',
-      data: {
-        'username': username,
-        'password': password,
-        if (email != null && email.isNotEmpty) 'email': email,
-      },
-    );
+  Future<void> register(
+    String username,
+    String password, {
+    String? email,
+  }) async {
+    final resp = await _ref
+        .read(apiDioProvider)
+        .post<Map<String, dynamic>>(
+          '/api/auth/register',
+          data: {
+            'username': username,
+            'password': password,
+            if (email != null && email.isNotEmpty) 'email': email,
+          },
+        );
     await _completeAuth(resp.data ?? const {});
   }
 
@@ -44,21 +50,15 @@ class AuthFlow {
   /// where the server completes the exchange — what reaches us is the ID
   /// token; the server verifies it against Logto's JWKS before it counts.
   Future<void> loginWithLogto(LogtoSso sso, {bool register = false}) async {
-    final client = LogtoClient(
-      config: LogtoConfig(endpoint: sso.endpoint, appId: sso.appId),
-    );
-    await client.signIn(
-      Env.ssoRedirectUri,
-      firstScreen: register ? FirstScreen.register : FirstScreen.signIn,
-    );
-    final idToken = await client.idToken;
-    if (idToken == null) {
-      throw StateError('Logto returned no id token');
-    }
-    final resp = await _ref.read(apiDioProvider).post<Map<String, dynamic>>(
-      '/api/auth/logto/id-token',
-      data: {'id_token': idToken},
-    );
+    final idToken = await _ref
+        .read(logtoSessionProvider)
+        .signIn(sso, register: register);
+    final resp = await _ref
+        .read(apiDioProvider)
+        .post<Map<String, dynamic>>(
+          '/api/auth/logto/id-token',
+          data: {'id_token': idToken},
+        );
     await _completeAuth(resp.data ?? const {});
   }
 

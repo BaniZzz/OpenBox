@@ -22,7 +22,7 @@ import 'picker_sheets.dart';
 import 'resource_slot.dart';
 
 /// The chat input (web `Composer.tsx`), mobile-optimized: rounded-3xl card
-/// shell, chromeless auto-growing field, mode/model pickers, context ring,
+/// shell, chromeless auto-growing field, model pickers, context ring,
 /// morphing send/stop button.
 class Composer extends ConsumerStatefulWidget {
   const Composer({
@@ -315,7 +315,6 @@ class _ComposerState extends ConsumerState<Composer> {
     final i18n = ref.watch(i18nProvider);
     final config = ref.watch(appConfigProvider).valueOrNull;
     final pickedModel = ref.watch(pickedModelProvider(widget.sessionKey));
-    final pickedAgent = ref.watch(pickedAgentProvider(widget.sessionKey));
 
     final modelId = activeModelId(
       picked: pickedModel,
@@ -347,8 +346,6 @@ class _ComposerState extends ConsumerState<Composer> {
       videoModel?.name ?? videoModelId,
       if (videoTier.isNotEmpty) videoTier,
     ].where((part) => part.isNotEmpty).join(' · ');
-    final activeAgent =
-        pickedAgent ?? widget.session?.agent ?? config?.defaultAgent ?? 'build';
     final reasoning = resolveReasoning(
       model: activeModel,
       sessionModel: widget.session?.model,
@@ -356,6 +353,13 @@ class _ComposerState extends ConsumerState<Composer> {
       pick: ref.watch(
           pickedVariantProvider(reasoningKey(widget.sessionKey, modelId))),
     );
+    final modelLabel = [
+      activeModel?.name ?? (modelId.isEmpty ? '…' : modelId),
+      if (reasoning.variants.isNotEmpty)
+        reasoning.activeId == null
+            ? i18n.t('chat:reasoning.default')
+            : reasoningLevelLabel(i18n, reasoning.activeId!),
+    ].join(' · ');
 
     final containerId = ref.watch(runningContainerProvider).valueOrNull?.id;
     final mentionOpen = _trigger != null && _trigger!.key != _dismissedKey;
@@ -423,9 +427,9 @@ class _ComposerState extends ConsumerState<Composer> {
             padding: const EdgeInsets.fromLTRB(10, 4, 8, 8),
             child: Row(
               children: [
-                // The controls scroll rather than squeeze: a third picker or
-                // a long model name must not shrink its neighbours to a
-                // zero-width sliver on a narrow phone.
+                // The controls scroll rather than squeeze: a long model name
+                // must not shrink its neighbours to a zero-width sliver on a
+                // narrow phone.
                 Expanded(
                   child: SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
@@ -445,26 +449,14 @@ class _ComposerState extends ConsumerState<Composer> {
                         ],
                         _pill(
                           t,
-                          label: _agentDisplay(i18n, activeAgent),
-                          icon: Icons.tune,
-                          onTap: () => showModePicker(
-                            context,
-                            ref,
-                            sessionKey: widget.sessionKey,
-                            currentAgent: activeAgent,
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        _pill(
-                          t,
-                          label: activeModel?.name ??
-                              (modelId.isEmpty ? '…' : modelId),
+                          label: modelLabel,
                           icon: Icons.workspaces_outline,
                           onTap: () => showModelPicker(
                             context,
                             ref,
                             sessionKey: widget.sessionKey,
                             currentModel: widget.session?.model,
+                            currentVariant: widget.session?.variant,
                           ),
                         ),
                         // Beside the chat model on purpose, as on web: the
@@ -483,26 +475,6 @@ class _ComposerState extends ConsumerState<Composer> {
                               sessionKey: widget.sessionKey,
                               currentModel: widget.session?.videoModel,
                               currentResolution: widget.session?.videoResolution,
-                            ),
-                          ),
-                        ],
-                        // Only models that declare reasoning levels get the
-                        // picker; the rest own the effort themselves.
-                        if (reasoning.variants.isNotEmpty) ...[
-                          const SizedBox(width: 6),
-                          _pill(
-                            t,
-                            label: reasoning.activeId == null
-                                ? i18n.t('chat:reasoning.default')
-                                : reasoningLevelLabel(
-                                    i18n, reasoning.activeId!),
-                            icon: Icons.psychology_outlined,
-                            onTap: () => showReasoningPicker(
-                              context,
-                              ref,
-                              sessionKey: widget.sessionKey,
-                              modelId: modelId,
-                              choice: reasoning,
                             ),
                           ),
                         ],
@@ -531,12 +503,6 @@ class _ComposerState extends ConsumerState<Composer> {
         ],
       ),
     );
-  }
-
-  String _agentDisplay(I18nState i18n, String agent) {
-    final key = 'chat:mode.$agent';
-    final label = i18n.t(key);
-    return label == key ? agent : label;
   }
 
   Widget _pill(

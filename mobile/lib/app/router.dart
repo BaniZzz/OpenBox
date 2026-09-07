@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../features/auth/login_page.dart';
 import '../features/auth/register_page.dart';
+import '../features/billing/billing_screen.dart';
 import '../features/chat/chat_screen.dart';
 import '../features/chat/empty_chat_screen.dart';
 import '../features/chat/widgets/composer/resource_slot.dart';
@@ -15,6 +16,8 @@ import '../features/resources/widgets/resource_mention_section.dart';
 import '../features/settings/settings_screen.dart';
 import '../features/skills/skills_screen.dart';
 import '../features/workbench/workbench_screen.dart';
+import '../features/workbench/workbench_surface_page.dart';
+import '../features/workspace/invite_screen.dart';
 import '../features/workspace/state/workspace_store.dart';
 import '../shared/api/auth_store.dart';
 import '../shared/router/paths.dart';
@@ -39,10 +42,14 @@ final routerProvider = Provider<GoRouter>((ref) {
       final location = state.matchedLocation;
       if (auth.isLoading) return null;
       final inApp = location.startsWith(Paths.app);
-      if (inApp && !auth.isAuthenticated) return Paths.login;
-      final onAuthPage =
-          location == Paths.login || location == Paths.register;
-      if (onAuthPage && auth.isAuthenticated) return Paths.app;
+      final invitation = location.startsWith('/invite/');
+      if ((inApp || invitation) && !auth.isAuthenticated) {
+        return Paths.loginFor(state.uri.toString());
+      }
+      final onAuthPage = location == Paths.login || location == Paths.register;
+      if (onAuthPage && auth.isAuthenticated) {
+        return Paths.postAuthDestination(state.uri);
+      }
       return null;
     },
     routes: [
@@ -57,6 +64,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: Paths.register,
         builder: (context, state) => const RegisterPage(),
+      ),
+      GoRoute(
+        path: '/invite/:token',
+        builder: (context, state) =>
+            InviteScreen(token: state.pathParameters['token'] ?? ''),
       ),
       GoRoute(
         path: Paths.app,
@@ -87,6 +99,23 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const SkillsScreen(),
       ),
       GoRoute(
+        path: Paths.desktop,
+        builder: (context, state) =>
+            const WorkbenchSurfacePage(sessionId: '', kind: 'desktop'),
+      ),
+      GoRoute(
+        path: '/app/billing',
+        builder: (context, state) => const BillingScreen(),
+        routes: [
+          GoRoute(
+            path: ':tab',
+            builder: (context, state) => BillingScreen(
+              initialTab: state.pathParameters['tab'] ?? 'purchase',
+            ),
+          ),
+        ],
+      ),
+      GoRoute(
         path: '/app/settings',
         builder: (context, state) => SettingsScreen(
           initialTab: state.uri.queryParameters['tab'] ?? 'appearance',
@@ -108,19 +137,16 @@ final routerProvider = Provider<GoRouter>((ref) {
 /// the chat composer owns the menu that shows it, and they meet here — the
 /// same hand-off the web does in `routes/workspace/*`.
 ComposerResourceSlot _resourceSlot(WidgetRef ref) => ComposerResourceSlot(
-      mentionSection: (context, {
-        required query,
-        required projectId,
-        required onPick,
-      }) =>
+  mentionSection:
+      (context, {required query, required projectId, required onPick}) =>
           ResourceMentionSection(
             query: query,
             projectId: projectId,
             onPick: onPick,
           ),
-      pickAndUpload: (context, {required projectId}) =>
-          pickAndUploadResources(ref, projectId: projectId),
-    );
+  pickAndUpload: (context, {required projectId}) =>
+      pickAndUploadResources(ref, projectId: projectId),
+);
 
 class _ChatRoute extends ConsumerWidget {
   const _ChatRoute({required this.sessionId});
@@ -128,10 +154,8 @@ class _ChatRoute extends ConsumerWidget {
   final String sessionId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) => ChatScreen(
-        sessionId: sessionId,
-        resources: _resourceSlot(ref),
-      );
+  Widget build(BuildContext context, WidgetRef ref) =>
+      ChatScreen(sessionId: sessionId, resources: _resourceSlot(ref));
 }
 
 /// `/app` index (web `EmptyChatRoute`): the empty chat inside the shell,

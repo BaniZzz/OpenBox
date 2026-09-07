@@ -43,6 +43,7 @@ sealed class MessagePart {
           inputTokens: asInt(json['input_tokens']) ?? 0,
           outputTokens: asInt(json['output_tokens']) ?? 0,
           cost: asDouble(json['cost']) ?? 0,
+          credits: asString(json['credits']),
           duration: asDouble(json['duration']) ?? 0,
         );
       case 'compaction':
@@ -58,10 +59,9 @@ sealed class MessagePart {
       case 'patch':
         return PatchPart(
           id: id,
-          files: asList(json['files'])
-              .whereType<Map<String, dynamic>>()
-              .map(PatchFile.fromJson)
-              .toList(),
+          files: asList(
+            json['files'],
+          ).whereType<Map<String, dynamic>>().map(PatchFile.fromJson).toList(),
           fromSnapshot: asString(json['from_snapshot']),
           toSnapshot: asString(json['to_snapshot']),
         );
@@ -96,10 +96,9 @@ sealed class MessagePart {
       case 'todo':
         return TodoPart(
           id: id,
-          items: asList(json['items'])
-              .whereType<Map<String, dynamic>>()
-              .map(TodoItem.fromJson)
-              .toList(),
+          items: asList(
+            json['items'],
+          ).whereType<Map<String, dynamic>>().map(TodoItem.fromJson).toList(),
           source: asString(json['source']),
         );
       case 'skill_job':
@@ -117,7 +116,11 @@ sealed class MessagePart {
               .toList(),
         );
       default:
-        return UnknownPart(id: id, rawType: asString(json['type']) ?? '', raw: json);
+        return UnknownPart(
+          id: id,
+          rawType: asString(json['type']) ?? '',
+          raw: json,
+        );
     }
   }
 }
@@ -125,11 +128,11 @@ sealed class MessagePart {
 enum ToolStatus { pending, running, completed, error }
 
 ToolStatus toolStatusFrom(String? value) => switch (value) {
-      'running' => ToolStatus.running,
-      'completed' => ToolStatus.completed,
-      'error' => ToolStatus.error,
-      _ => ToolStatus.pending,
-    };
+  'running' => ToolStatus.running,
+  'completed' => ToolStatus.completed,
+  'error' => ToolStatus.error,
+  _ => ToolStatus.pending,
+};
 
 class TextPart extends MessagePart {
   const TextPart({
@@ -154,11 +157,11 @@ class TextPart extends MessagePart {
   String get type => 'text';
 
   TextPart appendDelta(String delta) => TextPart(
-        id: id,
-        text: text + delta,
-        channel: channel,
-        synthetic: synthetic,
-      );
+    id: id,
+    text: text + delta,
+    channel: channel,
+    synthetic: synthetic,
+  );
 }
 
 class ReasoningPart extends MessagePart {
@@ -169,7 +172,8 @@ class ReasoningPart extends MessagePart {
   @override
   String get type => 'reasoning';
 
-  ReasoningPart appendDelta(String delta) => ReasoningPart(id: id, text: text + delta);
+  ReasoningPart appendDelta(String delta) =>
+      ReasoningPart(id: id, text: text + delta);
 }
 
 class ToolPart extends MessagePart {
@@ -214,6 +218,7 @@ class StepFinishPart extends MessagePart {
     required this.inputTokens,
     required this.outputTokens,
     required this.cost,
+    this.credits,
     required this.duration,
   });
 
@@ -221,6 +226,7 @@ class StepFinishPart extends MessagePart {
   final int inputTokens;
   final int outputTokens;
   final double cost;
+  final String? credits;
   final double duration;
 
   @override
@@ -263,11 +269,11 @@ class PatchFile {
   });
 
   factory PatchFile.fromJson(Map<String, dynamic> json) => PatchFile(
-        path: asString(json['path']) ?? '',
-        additions: asInt(json['additions']) ?? 0,
-        deletions: asInt(json['deletions']) ?? 0,
-        status: asString(json['status']) ?? 'modified',
-      );
+    path: asString(json['path']) ?? '',
+    additions: asInt(json['additions']) ?? 0,
+    deletions: asInt(json['deletions']) ?? 0,
+    status: asString(json['status']) ?? 'modified',
+  );
 
   final String path;
   final int additions;
@@ -308,16 +314,16 @@ class FileRelation {
   });
 
   factory FileRelation.fromJson(Map<String, dynamic> json) => FileRelation(
-        sourcePartId: asString(json['source_part_id']),
-        groupId: asString(json['group_id']),
-        role: asString(json['role']),
-        kind: asString(json['kind']),
-        label: asString(json['label']),
-        caption: asString(json['caption']),
-        ordinal: asInt(json['ordinal']),
-        revision: asInt(json['revision']),
-        metadata: asMap(json['metadata']),
-      );
+    sourcePartId: asString(json['source_part_id']),
+    groupId: asString(json['group_id']),
+    role: asString(json['role']),
+    kind: asString(json['kind']),
+    label: asString(json['label']),
+    caption: asString(json['caption']),
+    ordinal: asInt(json['ordinal']),
+    revision: asInt(json['revision']),
+    metadata: asMap(json['metadata']),
+  );
 
   /// Tool part that produced this resource.
   final String? sourcePartId;
@@ -452,7 +458,11 @@ class SkillJobArtifact {
 }
 
 class UnknownPart extends MessagePart {
-  const UnknownPart({required super.id, required this.rawType, required this.raw});
+  const UnknownPart({
+    required super.id,
+    required this.rawType,
+    required this.raw,
+  });
 
   final String rawType;
   final Map<String, dynamic> raw;

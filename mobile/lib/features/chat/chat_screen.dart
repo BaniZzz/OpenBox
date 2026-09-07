@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../shared/api/auth_store.dart';
 import '../../shared/appearance/tokens.dart';
 import '../../shared/appearance/type_scale.dart';
 import '../../shared/i18n/i18n.dart';
@@ -44,15 +45,22 @@ class ChatScreen extends ConsumerWidget {
     final busy = isBusyStatus(liveStatus ?? sessionState.session?.status);
     final retry = stream.retryOf(sessionId);
     final runError = stream.runErrorOf(sessionId);
+    final currentUserId = ref.watch(authProvider).user?.id;
+    final ownerId = sessionState.session?.userId;
+    final readOnly =
+        ownerId != null && currentUserId != null && ownerId != currentUserId;
 
     final rows = buildChatRows(messages);
     final permissions = pending.permissionsOf(sessionId);
     final questions = pending.questionsOf(sessionId);
 
-    final lastUserId = messages.lastWhere(
-      (m) => m.isUser,
-      orElse: () => const ChatMessage(id: '', sessionId: '', role: '', parts: []),
-    ).id;
+    final lastUserId = messages
+        .lastWhere(
+          (m) => m.isUser,
+          orElse: () =>
+              const ChatMessage(id: '', sessionId: '', role: '', parts: []),
+        )
+        .id;
 
     // Only the conversation's newest task card takes edits (web parity).
     final lastTodoIndex = rows.lastIndexWhere(
@@ -67,42 +75,40 @@ class ChatScreen extends ConsumerWidget {
                 ? InterruptionDivider(message: message)
                 : UserBubble(message: message),
           AssistantTurnData() => GestureDetector(
-              onLongPress: busy
-                  ? null
-                  : () => showTurnActions(
-                        context,
-                        ref,
-                        sessionId: sessionId,
-                        turn: row,
-                        onRegenerate: (id) => ref
-                            .read(chatSessionProvider(sessionId).notifier)
-                            .regenerate(id),
-                      ),
-              child: AssistantTurn(
-                turn: row,
-                sessionId: sessionId,
-                streaming: busy && index == rows.length - 1,
-                retry: busy && index == rows.length - 1 ? retry : null,
-                todoEditable: index == lastTodoIndex,
-                onStop: busy && index == rows.length - 1
-                    ? () => ref
+            onLongPress: busy || readOnly
+                ? null
+                : () => showTurnActions(
+                    context,
+                    ref,
+                    sessionId: sessionId,
+                    turn: row,
+                    onRegenerate: (id) => ref
                         .read(chatSessionProvider(sessionId).notifier)
-                        .stop()
-                    : null,
-                onReview: () => context.push(Paths.workbench(sessionId, tab: 'review')),
-                onRegenerate: (id) => ref
-                    .read(chatSessionProvider(sessionId).notifier)
-                    .regenerate(id),
-                onDismiss: (id) => ref
-                    .read(chatSessionProvider(sessionId).notifier)
-                    .dismiss(id),
-              ),
+                        .regenerate(id),
+                  ),
+            child: AssistantTurn(
+              turn: row,
+              sessionId: sessionId,
+              streaming: busy && index == rows.length - 1,
+              retry: busy && index == rows.length - 1 ? retry : null,
+              todoEditable: index == lastTodoIndex,
+              onStop: busy && index == rows.length - 1
+                  ? () =>
+                        ref.read(chatSessionProvider(sessionId).notifier).stop()
+                  : null,
+              onReview: () =>
+                  context.push(Paths.workbench(sessionId, tab: 'review')),
+              onRegenerate: (id) => ref
+                  .read(chatSessionProvider(sessionId).notifier)
+                  .regenerate(id),
+              onDismiss: (id) =>
+                  ref.read(chatSessionProvider(sessionId).notifier).dismiss(id),
             ),
+          ),
         },
       if (busy && (rows.isEmpty || rows.last is UserRowData))
         TypingRow(retry: retry),
-      for (final permission in permissions)
-        PermissionCard(request: permission),
+      for (final permission in permissions) PermissionCard(request: permission),
       // At the end of the transcript, inside the scroller, because it reads as
       // the next turn in the conversation. It used to sit below the list as a
       // sibling of it, and a tall one — a segment approval carries three
@@ -118,8 +124,8 @@ class ChatScreen extends ConsumerWidget {
           child: sessionState.loading && messages.isEmpty
               ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
               : sessionState.failed && messages.isEmpty
-                  ? _ErrorState(sessionId: sessionId)
-                  : ChatFlow(rows: widgets, forceScrollToken: lastUserId),
+              ? _ErrorState(sessionId: sessionId)
+              : ChatFlow(rows: widgets, forceScrollToken: lastUserId),
         ),
         // One line, and it must survive until the next send, so it stays
         // above the composer rather than scrolling away with the transcript.
@@ -129,21 +135,42 @@ class ChatScreen extends ConsumerWidget {
             onDismiss: () =>
                 ref.read(chatStreamProvider.notifier).clearRunError(sessionId),
           ),
-        SafeArea(
-          top: false,
-          child: Composer(
-            sessionKey: sessionId,
-            session: sessionState.session,
-            busy: busy,
-            resources: resources,
-            onSend: (text, attachments) => ref
-                .read(chatSessionProvider(sessionId).notifier)
-                .send(text, attachments: attachments),
-            onStop: busy
-                ? () => ref.read(chatSessionProvider(sessionId).notifier).stop()
-                : null,
+        if (readOnly)
+          SafeArea(
+            top: false,
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 14),
+              decoration: BoxDecoration(
+                border: Border(top: BorderSide(color: context.tokens.hair)),
+              ),
+              child: Text(
+                ref.watch(i18nProvider).t('workspace:readOnlySession'),
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: FontSizes.sm,
+                  color: context.tokens.n600,
+                ),
+              ),
+            ),
+          )
+        else
+          SafeArea(
+            top: false,
+            child: Composer(
+              sessionKey: sessionId,
+              session: sessionState.session,
+              busy: busy,
+              resources: resources,
+              onSend: (text, attachments) => ref
+                  .read(chatSessionProvider(sessionId).notifier)
+                  .send(text, attachments: attachments),
+              onStop: busy
+                  ? () =>
+                        ref.read(chatSessionProvider(sessionId).notifier).stop()
+                  : null,
+            ),
           ),
-        ),
       ],
     );
   }
@@ -184,8 +211,10 @@ class _ErrorState extends ConsumerWidget {
                 borderRadius: BorderRadius.circular(Radii.full),
               ),
             ),
-            child: Text(i18n.t('common:action.retry'),
-                style: const TextStyle(fontSize: FontSizes.sm)),
+            child: Text(
+              i18n.t('common:action.retry'),
+              style: const TextStyle(fontSize: FontSizes.sm),
+            ),
           ),
         ],
       ),

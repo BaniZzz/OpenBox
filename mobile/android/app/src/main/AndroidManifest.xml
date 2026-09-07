@@ -29,6 +29,18 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="https" android:host="ai.bossipai.com.cn" android:pathPrefix="/invite/"/>
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="com.bossip.bipmobile" android:pathPrefix="/invite/"/>
+            </intent-filter>
         </activity>
         <!-- Where the sign-in browser returns: flutter_web_auth_2 (used by
              the Logto SDK) catches the redirect scheme here and hands the
@@ -43,7 +55,7 @@
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.BROWSABLE"/>
-                <data android:scheme="com.bossip.bipmobile"/>
+                <data android:scheme="com.bossip.bipmobile" android:host="callback"/>
             </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
@@ -58,6 +70,7 @@
 
          In particular, this is used by the Flutter engine in io.flutter.plugin.text.ProcessTextPlugin. -->
     <queries>
+        <package android:name="com.eg.android.AlipayGphone"/>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>

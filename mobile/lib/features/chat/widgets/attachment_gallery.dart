@@ -1,15 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../../shared/api/providers.dart';
 import '../../../shared/appearance/tokens.dart';
 import '../../../shared/appearance/type_scale.dart';
+import '../../../shared/download/native_download.dart';
 import '../../../shared/i18n/i18n.dart';
 import '../../../shared/models/json.dart';
 import '../../../shared/models/message_part.dart';
+import '../../../shared/utils/error_text.dart';
 import '../../../shared/utils/format.dart';
+import '../../../shared/widgets/toast.dart';
 import '../api/assets_api.dart';
 
 const _visibleByDefault = 6;
@@ -25,8 +27,7 @@ bool isGalleryMedia(FilePart part) {
 
 /// An uploaded audio asset — rendered as a player rather than a thumbnail
 /// (web `isAudioPart`).
-bool isAudioPart(FilePart part) =>
-    (part.mimeType ?? '').startsWith('audio/');
+bool isAudioPart(FilePart part) => (part.mimeType ?? '').startsWith('audio/');
 
 String _baseName(String path) => path.split('/').last;
 
@@ -79,8 +80,9 @@ class _AttachmentGalleryState extends ConsumerState<AttachmentGallery> {
         : (ordered.length == 2 ? 2 : 3);
 
     return Column(
-      crossAxisAlignment:
-          widget.alignEnd ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      crossAxisAlignment: widget.alignEnd
+          ? CrossAxisAlignment.end
+          : CrossAxisAlignment.start,
       children: [
         ConstrainedBox(
           constraints: BoxConstraints(
@@ -183,11 +185,11 @@ class _MediaThumb extends ConsumerWidget {
   }
 
   Widget _failed(BossipTokens t, I18nState i18n) => Center(
-        child: Text(
-          i18n.t('chat:gallery.failed'),
-          style: TextStyle(fontSize: FontSizes.xs2, color: t.n600),
-        ),
-      );
+    child: Text(
+      i18n.t('chat:gallery.failed'),
+      style: TextStyle(fontSize: FontSizes.xs2, color: t.n600),
+    ),
+  );
 }
 
 /// Video gallery tile: first frame (natively extracted from the presigned
@@ -201,8 +203,7 @@ class _VideoTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final t = context.tokens;
-    final frame =
-        ref.watch(videoThumbnailProvider(part.assetId!)).valueOrNull;
+    final frame = ref.watch(videoThumbnailProvider(part.assetId!)).valueOrNull;
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -236,7 +237,11 @@ class _VideoTile extends ConsumerWidget {
               color: Colors.white.withValues(alpha: 0.9),
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.play_arrow, size: 22, color: Colors.black87),
+            child: const Icon(
+              Icons.play_arrow,
+              size: 22,
+              color: Colors.black87,
+            ),
           ),
         ),
         Positioned(
@@ -308,13 +313,20 @@ class _MediaViewer extends ConsumerWidget {
                       ),
                     ),
                   IconButton(
-                    icon: const Icon(Icons.file_download_outlined,
-                        color: Colors.white, size: 20),
+                    icon: const Icon(
+                      Icons.file_download_outlined,
+                      color: Colors.white,
+                      size: 20,
+                    ),
                     tooltip: i18n.t('chat:gallery.download'),
                     onPressed: () => _download(ref),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white, size: 20),
+                    icon: const Icon(
+                      Icons.close,
+                      color: Colors.white,
+                      size: 20,
+                    ),
                     tooltip: i18n.t('chat:gallery.close'),
                     onPressed: () => Navigator.of(context).pop(),
                   ),
@@ -326,13 +338,18 @@ class _MediaViewer extends ConsumerWidget {
                 onTap: isVideo ? null : () => Navigator.of(context).pop(),
                 child: asset.when(
                   loading: () => const Center(
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white70)),
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white70,
+                    ),
+                  ),
                   error: (_, _) => Center(
                     child: Text(
                       i18n.t('chat:gallery.failed'),
                       style: const TextStyle(
-                          color: Colors.white70, fontSize: FontSizes.sm),
+                        color: Colors.white70,
+                        fontSize: FontSizes.sm,
+                      ),
                     ),
                   ),
                   data: (info) => isVideo
@@ -346,8 +363,9 @@ class _MediaViewer extends ConsumerWidget {
                               errorBuilder: (_, _, _) => Text(
                                 i18n.t('chat:gallery.failed'),
                                 style: const TextStyle(
-                                    color: Colors.white70,
-                                    fontSize: FontSizes.sm),
+                                  color: Colors.white70,
+                                  fontSize: FontSizes.sm,
+                                ),
                               ),
                             ),
                           ),
@@ -362,15 +380,27 @@ class _MediaViewer extends ConsumerWidget {
   }
 
   Future<void> _download(WidgetRef ref) async {
-    // Fresh URL with content-disposition so the browser saves it
-    // (web Lightbox download).
-    final resp = await ref.read(apiDioProvider).get<Map<String, dynamic>>(
-      '/api/assets/${part.assetId}/url',
-      queryParameters: {'download': true},
-    );
-    final url = asString(resp.data?['url']);
-    if (url != null) {
-      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+    try {
+      final resp = await ref
+          .read(apiDioProvider)
+          .get<Map<String, dynamic>>(
+            '/api/assets/${part.assetId}/url',
+            queryParameters: {'download': true},
+          );
+      final url = asString(resp.data?['url']);
+      if (url != null) {
+        await ref
+            .read(nativeDownloadProvider)
+            .saveUrl(
+              url: url,
+              suggestedName: _baseName(part.path),
+              mimeType: part.mimeType ?? 'application/octet-stream',
+            );
+      }
+    } catch (error) {
+      ref
+          .read(toastProvider.notifier)
+          .error(errorText(ref.read(i18nProvider), error));
     }
   }
 }
@@ -393,14 +423,16 @@ class _VideoBoxState extends State<_VideoBox> {
   void initState() {
     super.initState();
     _controller = VideoPlayerController.networkUrl(Uri.parse(widget.url))
-      ..initialize().then((_) {
-        if (mounted) {
-          setState(() => _ready = true);
-          _controller.play();
-        }
-      }).catchError((Object _) {
-        if (mounted) setState(() => _failed = true);
-      });
+      ..initialize()
+          .then((_) {
+            if (mounted) {
+              setState(() => _ready = true);
+              _controller.play();
+            }
+          })
+          .catchError((Object _) {
+            if (mounted) setState(() => _failed = true);
+          });
   }
 
   @override
@@ -413,13 +445,17 @@ class _VideoBoxState extends State<_VideoBox> {
   Widget build(BuildContext context) {
     if (_failed) {
       return const Center(
-        child: Icon(Icons.videocam_off_outlined, color: Colors.white54, size: 40),
+        child: Icon(
+          Icons.videocam_off_outlined,
+          color: Colors.white54,
+          size: 40,
+        ),
       );
     }
     if (!_ready) {
       return const Center(
-          child:
-              CircularProgressIndicator(strokeWidth: 2, color: Colors.white70));
+        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white70),
+      );
     }
     return GestureDetector(
       onTap: () => setState(() {
@@ -467,13 +503,23 @@ class _FileChipRowState extends ConsumerState<FileChipRow> {
     if (assetId == null || _downloading) return;
     setState(() => _downloading = true);
     try {
-      final resp = await ref.read(apiDioProvider).get<Map<String, dynamic>>(
-        '/api/assets/$assetId/url',
-        queryParameters: {'download': true},
-      );
+      final resp = await ref
+          .read(apiDioProvider)
+          .get<Map<String, dynamic>>(
+            '/api/assets/$assetId/url',
+            queryParameters: {'download': true},
+          );
       final url = asString(resp.data?['url']);
       if (url != null) {
-        await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+        await ref
+            .read(nativeDownloadProvider)
+            .saveUrl(url: url, suggestedName: widget.name);
+      }
+    } catch (error) {
+      if (mounted) {
+        ref
+            .read(toastProvider.notifier)
+            .error(errorText(ref.read(i18nProvider), error));
       }
     } finally {
       if (mounted) setState(() => _downloading = false);

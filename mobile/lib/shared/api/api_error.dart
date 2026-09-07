@@ -50,3 +50,9 @@ class ApiError implements Exception {
   @override
   String toString() => 'ApiError($status $code): $message';
 }
+
+ApiError? apiErrorOf(Object error) => switch (error) {
+      final ApiError value => value,
+      final DioException value => ApiError.fromDio(value),
+      _ => null,
+    };

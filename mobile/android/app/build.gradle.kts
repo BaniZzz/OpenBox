@@ -42,3 +42,9 @@ kotlin {
 flutter {
     source = "../.."
 }
+
+dependencies {
+    // Official Alipay App Pay SDK. The order string is generated and signed
+    // by our backend; no merchant private key is ever bundled in the APK.
+    implementation("com.alipay.sdk:alipaysdk-android:15.8.42")
+}

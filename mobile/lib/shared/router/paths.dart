@@ -6,11 +6,35 @@ abstract final class Paths {
   static const String register = '/register';
   static const String app = '/app';
 
+  static String invite(String token) => '/invite/${Uri.encodeComponent(token)}';
+
+  static String loginFor(String destination) =>
+      '$login?redirect=${Uri.encodeComponent(destination)}';
+
+  static String authPeer(String path, Uri current) {
+    final destination = current.queryParameters['redirect'];
+    return destination == null
+        ? path
+        : '$path?redirect=${Uri.encodeComponent(destination)}';
+  }
+
+  static String postAuthDestination(Uri uri) {
+    final destination = uri.queryParameters['redirect'];
+    return destination != null && destination.startsWith('/')
+        ? destination
+        : app;
+  }
+
   static String chat(String sessionId) => '/app/s/$sessionId';
 
   static const String cron = '/app/cron';
 
   static const String skills = '/app/skills';
+
+  static const String desktop = '/app/desktop';
+
+  static String billing([String? tab]) =>
+      tab == null ? '/app/billing' : '/app/billing/$tab';
 
   /// Optional project scope, like the web `paths.resources(projectId)`.
   static String resources([String? projectId]) => projectId == null

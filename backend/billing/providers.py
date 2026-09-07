@@ -52,6 +52,13 @@ class Checkout:
     provider_order_id: str
 
 
+@dataclass(frozen=True)
+class AppCheckout:
+    """Opaque payload signed by the server for a provider's native SDK."""
+    payload: str
+    provider_order_id: str
+
+
 class CheckoutResponse(BaseModel):
     model_config = ConfigDict(strict=True)
     checkout_url: str = Field(min_length=1, max_length=2048)

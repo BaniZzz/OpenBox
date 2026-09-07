@@ -5,6 +5,41 @@
 
 Logto SSO 的取值另见 [LOGTO_PROD.md](LOGTO_PROD.md)。
 
+## 当前生产版本：2026-09-06 Logto 完整退出修复
+
+- 阿里云生产统一标签已更新为
+  `20260906-logto-logout3-3586742`。后端镜像 ID 为
+  `sha256:f27f1ba00de0491623eaacd830cbe6dd1a1b2cbfb21649db797b1d250f590114`，
+  前端镜像 ID 为
+  `sha256:ed042053905cf18749e659158ac5c964e1b8791225702eee4da3914b02b8f0d7`；
+  均为本地构建的 `linux/amd64` 镜像。
+- 根因不是 Logto 控制台缺少回调地址，而是 Web 点击退出时先清 Zustand 并渲染
+  `/login`，自动 SSO 入口在 Logto end-session 完成前又发起 authorize，形成竞态并
+  把同一账号重新登录。对照 `workspace/bossip` 后改为一次完整页面导航到
+  `GET /api/auth/logto/logout`：后端在同一个 302 响应中撤销/删除 OpenBox refresh
+  Cookie，再跳 Logto `{issuer}/session/end`；前端不再提前渲染登录页。
+- Web 和移动端的新 authorize 都使用 `prompt=login consent`：`login` 防止系统浏览器
+  残留 SSO Cookie 静默恢复刚退出的账号，`consent` 保留 `offline_access` 所需语义。
+  移动端退出还会调用 Logto Dart SDK `signOut(postLogoutRedirectUri)`，并在失败路径
+  强制删除 SDK 的 access/refresh/ID token。
+- 自动验证：Web i18n/lint/typecheck 与 31 个测试文件、206 项测试通过（lint 只有
+  24 条既有 warning）；移动端 locale 逐字节门禁、`flutter analyze`、26 项测试通过；
+  后端认证相关 29 项测试通过。Android release APK 和 iOS no-codesign release 均
+  已重新构建。
+- 生产验证：四个容器 healthy，首页与 Logto config 均为 200，退出路由为 302 且
+  同时返回 `refresh_token Max-Age=0` 和 Logto end-session Location；生产静态包含
+  `login consent`。真实 Chrome 先在同一退出实现中从 `andrewwang` 点击登出并稳定
+  回首页；最终标签部署后再点击登录，停在 Logto“登录你的账号”页，不再静默回到
+  原账号。
+- 本次没有数据库迁移，发布前后均为 `f3a5b7c9d1e4 (head)`。最终备份在
+  `/opt/openbox/backups/20260906-logto-logout3-3586742/activation-233415/`，数据库
+  dump 的 SHA-256 校验已通过；回滚标签为
+  `20260906-logto-logout2-38ef802`。中间标签
+  `20260906-logto-logout-c5c86bf` 仍有 SPA 自动登录竞态，不能作为后续基线；
+  `20260906-logto-logout2-38ef802` 已解决退出问题，但授权 prompt 尚未合并
+  `consent`，仅用作紧急回滚。三个批次的 OSS 中转对象已全部删除；本地临时镜像
+  压缩包已移入废纸篓，服务器上的镜像与版本化备份继续保留。
+
 ## 一、两套环境
 
 | | 开发（AWS） | 生产（阿里云） |
@@ -18,7 +53,27 @@ Logto SSO 的取值另见 [LOGTO_PROD.md](LOGTO_PROD.md)。
 | 源码 | 有 `/opt/openbox/src`（git checkout），可就地构建 | **无源码**，镜像从外部装载 |
 | 沙箱 | `SANDBOX_PROVIDER=wuying` | `SANDBOX_PROVIDER=wuying` |
 
-### 2026-09-06：阿里云积分与支付宝发布
+### 2026-09-06：支付宝 App Pay 服务端签名接口（上一版本记录）
+
+- 阿里云生产后端已更新为 `openbox-backend:20260906-app-pay-f9247f1`；在本机以 `--platform linux/amd64` 构建，镜像 manifest ID 为 `sha256:1094bd9f7cfa1092e5c34c75350983f7ccad5aa42bdafbd02da177f45849654f`。
+- 构建基线不是单独的 `main@49ba4ff`：发布复核发现生产旧标签还包含 `c8fea7f` 的预热池购买门禁与续费保护，因此先将该分支相对 main 的 14 个后端文件逐文件恢复并用 `git diff c8fea7f` 核对完全一致，再叠加 App Pay。中间镜像 `20260906-app-pay-6310856` 已被本标签纠正替换，不能作为后续基线。
+- 前端代码未改。线上 compose 使用统一 `OPENBOX_IMAGE_TAG`，因此将原 `openbox-frontend-v2:20260906-a3-c8fea7f` 的同一 image ID 仅追加新 tag 后重建；没有重新构建或替换前端内容。
+- 后端增加 `POST /api/billing/orders/{order_id}/app-checkout`，为 Android/iOS 官方支付宝 SDK 生成服务端 RSA2 签名 payload。商户私钥继续只从服务器 secret 读取；App SDK 返回值不作为到账证据。
+- 本次无数据库迁移，发布前后均为 `f3a5b7c9d1e4 (head)`；未修改 `backend.env`、支付密钥或业务数据。
+- 发布前 billing + fleet + migration 相关回归 `183 passed`；全量 unit 为 `1457 passed / 5 failed`，剩余 5 项全部位于本次未改动且依赖本机私有配置的 video 模型断言，已保留为既有测试债，不影响本次支付/舰队回归。
+- 生产 `backend/frontend/postgres/redis` 均 healthy；公网首页与 Logto config 为 200；新 App Pay 路由未登录请求由发布前 404 变为 401，证明路由已在公网生效，容器内路由断言同时通过。
+- 最终发布备份：`/opt/openbox/backups/20260906-app-pay-f9247f1/activation-223456/`，含 `.env`、后端配置、两份 compose 与 PostgreSQL custom-format dump；中间切换的备份也保留在 `backups/20260906-app-pay-6310856/`。回滚标签为 `20260906-a3-c8fea7f`，旧镜像仍保留。OSS 中转对象已在每次发布结束后删除。
+
+### 2026-09-06：正式价格与项目名称修复（上一版本记录）
+
+- 阿里云前后端镜像已更新为 `20260906-project-prices-4cd8725`，源码提交 `4cd8725`；数据库升级至 `f3a5b7c9d1e4`。
+- 清空 `config/backend.env` 的 `BILLING_PLANS_FILE`，恢复专业版 599 元/月、7188 元/年，旗舰版 2100 元/月、25200 元/年。`BILLING_MODE=shadow` 保持不变。
+- 注册创建的默认项目统一命名为“默认空间”，补修 1 条遗留 `Default` 记录；项目列表按创建时间倒序，时间相同时按 ID 倒序。
+- 以本次发布前实际容器为准，保留 `WUYING_MODE=per_user`、`WUYING_ROUTING=per_desktop`、`POOL_ENABLED=true`、`POOL_AUTO_PURCHASE=false`。桌面池此前已由另一项更新启用，本次没有改动该开关；仅修改套餐目录环境变量。9 个无影相关源码文件内容一致，原 12 条桌面记录及归属关系保留。
+- 189 项相关测试通过；先在数据库副本验证迁移。浏览器确认“默认空间”、月付/年付原价、原专业版有效期和 290 积分余额；已支付的 0.10 元测试订单与订阅快照保持不变。前后端健康检查通过。
+- 本次配置和数据库备份：`/opt/openbox/backups/20260906-project-prices-4cd8725/activation-101803/`。回退代码时可先用本次镜像执行 `alembic downgrade e2f4a6b8c0d2`，该数据修复迁移的回退不会重新改回英文名称。
+
+### 2026-09-06：阿里云积分与支付宝首次发布（历史记录）
 
 - 发布目标为 **`https://ai.bossipai.com.cn` / `i-uf66pcsepxpc23v5qsts`**。
 - 前后端镜像：`20260906-billing-fleet-aaf1fff`，代码提交 `aaf1fff`，本地构建 `linux/amd64` 后传入服务器。
@@ -26,7 +81,7 @@ Logto SSO 的取值另见 [LOGTO_PROD.md](LOGTO_PROD.md)。
 - 数据库由 `a3f1e5c7d9b2` 升至合并版本 `e2f4a6b8c0d2`。先在数据库副本验证，原用户、工作空间、对话、项目、桌面和桌面池数据保持一致。
 - 保留 `WUYING_MODE=per_user`、`WUYING_ROUTING=per_desktop`、`POOL_ENABLED=false`、`POOL_AUTO_PURCHASE=false` 及所有原运行配置。9 条桌面记录与归属关系保留；未执行真实桌面关机/开机操作。
 - 支付通知为 `https://ai.bossipai.com.cn/api/billing/webhooks/alipay`，支付返回为 `/app/billing/orders`。密钥独立放在服务器 `secrets/alipay/`，以只读方式挂载，未打入镜像。
-- 当前按用户要求保留专业版 **0.10 元**、旗舰版 **0.20 元**测试价格；`BILLING_MODE=shadow`，模型用量记账但不扣余额。
+- 首次发布时按用户要求保留专业版 **0.10 元**、旗舰版 **0.20 元**测试价格；`BILLING_MODE=shadow`，模型用量记账但不扣余额。当前价格见上方更新记录。
 - 验证：前端 205 项、后端相关 195 项测试通过；公网前端与构建产物一致，支付宝真实签名查询成功，公网回调拒绝无效签名。尚未实际付款。
 - 配置和数据库备份位于服务器 `/opt/openbox/backups/20260906-billing-fleet-aaf1fff/`。新增 billing 表后回退旧镜像时，不要直接执行旧镜像的 `alembic upgrade head`；旧镜像不能识别新迁移编号。
 

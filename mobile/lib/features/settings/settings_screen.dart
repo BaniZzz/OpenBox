@@ -7,9 +7,11 @@ import '../../shared/i18n/i18n.dart';
 import 'widgets/account_section.dart';
 import 'widgets/appearance_section.dart';
 import 'widgets/models_section.dart';
+import 'widgets/team_section.dart';
 
 /// Settings (web `SettingsRoute`), mobile: segmented tabs
-/// 账号 / 外观 / 模型. Usage/tools/browser pages are desktop-scope.
+/// 账号 / 团队 / 外观 / 模型. Tools/browser pages are desktop-scope; billing
+/// has its own routed screen like web.
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key, this.initialTab = 'appearance'});
 
@@ -20,10 +22,11 @@ class SettingsScreen extends ConsumerStatefulWidget {
 }
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
-  static const _tabs = ['account', 'appearance', 'models'];
+  static const _tabs = ['account', 'team', 'appearance', 'models'];
 
-  late String _tab =
-      _tabs.contains(widget.initialTab) ? widget.initialTab : 'appearance';
+  late String _tab = _tabs.contains(widget.initialTab)
+      ? widget.initialTab
+      : 'appearance';
 
   @override
   Widget build(BuildContext context) {
@@ -44,32 +47,36 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           preferredSize: const Size.fromHeight(46),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
-            child: Row(
-              children: [
-                for (final tab in _tabs)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: ChoiceChip(
-                      label: Text(
-                        i18n.t('settings:nav.$tab'),
-                        style: const TextStyle(fontSize: FontSizes.sm),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  for (final tab in _tabs)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: ChoiceChip(
+                        label: Text(
+                          i18n.t('settings:nav.$tab'),
+                          style: const TextStyle(fontSize: FontSizes.sm),
+                        ),
+                        selected: _tab == tab,
+                        showCheckmark: false,
+                        selectedColor: t.a200,
+                        backgroundColor: t.bg,
+                        labelStyle: TextStyle(color: t.ink),
+                        side: BorderSide(color: _tab == tab ? t.a700 : t.hair),
+                        onSelected: (_) => setState(() => _tab = tab),
                       ),
-                      selected: _tab == tab,
-                      showCheckmark: false,
-                      selectedColor: t.a200,
-                      backgroundColor: t.bg,
-                      labelStyle: TextStyle(color: t.ink),
-                      side: BorderSide(color: _tab == tab ? t.a700 : t.hair),
-                      onSelected: (_) => setState(() => _tab = tab),
                     ),
-                  ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
       ),
       body: switch (_tab) {
         'account' => const AccountSection(),
+        'team' => const TeamSection(),
         'models' => const ModelsSection(),
         _ => const AppearanceSection(),
       },

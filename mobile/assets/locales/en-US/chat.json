@@ -179,7 +179,6 @@
     "work": {
       "titleActive": "Working",
       "titleDone": "Work log",
-      "summary": "{{messages}} progress notes · {{screenshots}} visual checkpoints",
       "checkpoint": "Page checkpoint",
       "omitted": "{{count}} repetitive process screenshots folded away"
     }
@@ -214,7 +213,7 @@
     "inputTokens": "Input tokens",
     "outputTokens": "Output tokens",
     "cacheTokens": "Cached tokens",
-    "cost": "Cost of this call",
+    "cost": "Credits used",
     "generationDuration": "Generating for",
     "totalDuration": "Total time",
     "expandMessage": "Show full message",

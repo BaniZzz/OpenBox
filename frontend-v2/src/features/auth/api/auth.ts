@@ -8,14 +8,8 @@ import { useAuthStore } from "@/shared/api/auth-store"
 import { useAppearanceStore } from "@/shared/appearance/store"
 import { paths } from "@/shared/router/paths"
 import type { AuthUser, UserPreferences } from "@/shared/types/api"
-import {
-  beginLogtoLogin,
-  getLogtoConfig,
-  takeReturnPath,
-  type LogtoConfig,
-  type LogtoResult,
-  type SsoScreen,
-} from "@/features/auth/lib/logto"
+import { beginLogtoLogin, takeReturnPath, type LogtoResult, type SsoScreen } from "@/features/auth/lib/logto"
+import { getLogtoConfig, type LogtoConfig } from "@/shared/api/logto"
 
 export interface LoginBody {
   username: string

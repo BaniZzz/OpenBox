@@ -93,11 +93,11 @@ async def test_catalog_prices_paid_activation_and_monthly_yearly_grants(shop):
     catalog = (await shop.client.get("/api/billing/plans")).json()
     assert [(p["id"], p["prices_fen"], p["credits"]) for p in catalog["plans"]] == [
         ("free", {"monthly": 0, "yearly": 0}, "10"),
-        ("pro", {"monthly": 59900, "yearly": 718800}, "280"),
-        ("max", {"monthly": 210000, "yearly": 2520000}, "1680"),
+        ("pro", {"monthly": 49900, "yearly": 598800}, "280"),
+        ("max", {"monthly": 199900, "yearly": 2398800}, "1680"),
     ]
     order = await subscribe(shop, cycle="yearly")
-    assert order["amount_fen"] == 718800 and Decimal(order["credits"]) == 280
+    assert order["amount_fen"] == 598800 and Decimal(order["credits"]) == 280
     assert await balance(shop) == 10  # checkout creation does not activate the plan
     assert await pay(order, "annual-one") == {"accepted": True, "duplicate": False}
     assert await pay(order, "annual-one") == {"accepted": True, "duplicate": True}
@@ -166,7 +166,7 @@ async def test_pending_subscription_keeps_price_snapshot_after_catalog_change(sh
     changed.plan("pro").credits = Decimal(999)
     changed.plan("pro").prices_fen["monthly"] = 123400
     monkeypatch.setattr(payments, "plan_catalog", lambda: changed)
-    assert (await subscribe(shop, key=key))["amount_fen"] == 59900
+    assert (await subscribe(shop, key=key))["amount_fen"] == 49900
     await pay(order)
     assert await balance(shop) == 280
     async with get_db_session() as db:

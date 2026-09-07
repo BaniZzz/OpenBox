@@ -1,8 +1,10 @@
 """Authentication API routes — register, login, refresh, logout, ticket."""
 import hashlib as _hashlib
 from datetime import datetime, timedelta, timezone
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, HTTPException, Request, Response, Depends
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
 from auth.jwt import create_access_token, create_refresh_token, decode_refresh_token, init_auth
@@ -88,6 +90,20 @@ def _blacklist_key(token: str) -> str:
     deployment out and kept it that way until the entry expired.
     """
     return f"jwt_bl:{_hashlib.sha256(token.encode()).hexdigest()}"
+
+
+async def _revoke_refresh_cookie(request: Request, response: Response) -> None:
+    """Revoke the current refresh token and expire its browser cookie."""
+    refresh_token = request.cookies.get("refresh_token")
+    if refresh_token and _cache:
+        payload = decode_refresh_token(refresh_token)
+        if payload:
+            import time
+            exp = payload.get("exp", 0)
+            ttl = max(int(exp - time.time()), 1)
+            await _cache.set(_blacklist_key(refresh_token), "1", ttl=ttl)
+
+    response.delete_cookie("refresh_token", path="/api/auth")
 
 
 def _coded_error(status: int, code: str, message: str) -> HTTPException:
@@ -210,6 +226,35 @@ async def logto_config():
     data["redirect_uri"] = config.logto_redirect_uri
     data["post_logout_redirect_uri"] = config.logto_post_logout_redirect_uri
     return data
+
+
+@router.get("/logto/logout")
+async def logto_logout(request: Request):
+    """Clear OpenBox and enter Logto's end-session flow in one navigation.
+
+    Keeping this as a top-level browser navigation is deliberate: clearing the
+    SPA store first makes the auth guard render `/login`, whose SSO entry can
+    start a fresh authorize request before Logto has finished signing out.
+    """
+    from auth.logto import public_config
+    from core.config import get_config
+
+    config = get_config()
+    public = public_config()
+    post_logout = config.logto_post_logout_redirect_uri or "/"
+    if public["enabled"]:
+        issuer = public["issuer"].rstrip("/")
+        query = urlencode({
+            'client_id': public['app_id'],
+            'post_logout_redirect_uri': post_logout,
+        })
+        target = f"{issuer}/session/end?{query}"
+    else:
+        target = post_logout
+
+    response = RedirectResponse(target, status_code=302)
+    await _revoke_refresh_cookie(request, response)
+    return response
 
 
 @router.post("/logto/exchange", response_model=TokenResponse)
@@ -354,19 +399,7 @@ async def refresh(request: Request, response: Response):
 
 @router.post("/logout")
 async def logout(request: Request, response: Response, current_user: dict = Depends(get_current_user)):
-    # Blacklist the refresh token if present
-    refresh_token = request.cookies.get("refresh_token")
-    if refresh_token and _cache:
-        from auth.jwt import decode_refresh_token
-        payload = decode_refresh_token(refresh_token)
-        if payload:
-            # Blacklist for remaining validity
-            import time
-            exp = payload.get("exp", 0)
-            ttl = max(int(exp - time.time()), 1)
-            await _cache.set(_blacklist_key(refresh_token), "1", ttl=ttl)
-
-    response.delete_cookie("refresh_token", path="/api/auth")
+    await _revoke_refresh_cookie(request, response)
     return {"ok": True}
 
 

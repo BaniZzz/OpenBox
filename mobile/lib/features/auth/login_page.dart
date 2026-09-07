@@ -48,7 +48,9 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       await ref
           .read(authFlowProvider)
           .login(_account.text.trim(), _password.text);
-      if (mounted) context.go(Paths.app);
+      if (mounted) {
+        context.go(Paths.postAuthDestination(GoRouterState.of(context).uri));
+      }
     } catch (e) {
       if (mounted) {
         setState(() => _error = errorText(ref.read(i18nProvider), e));
@@ -60,9 +62,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
   @override
   Widget build(BuildContext context) {
-    return AuthShell(
-      child: SsoGate(register: false, child: _form(context)),
-    );
+    return AuthShell(child: SsoGate(register: false, child: _form(context)));
   }
 
   /// The account/password form — reached only when Logto is unavailable,
@@ -74,8 +74,10 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(i18n.t('auth:loginTitle'),
-            style: Theme.of(context).textTheme.titleLarge),
+        Text(
+          i18n.t('auth:loginTitle'),
+          style: Theme.of(context).textTheme.titleLarge,
+        ),
         const SizedBox(height: 8),
         Text(
           i18n.t('auth:loginBody'),
@@ -149,7 +151,9 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         ),
         const SizedBox(height: 16),
         GestureDetector(
-          onTap: () => context.go(Paths.register),
+          onTap: () => context.go(
+            Paths.authPeer(Paths.register, GoRouterState.of(context).uri),
+          ),
           child: Text(
             i18n.t('auth:noAccount'),
             style: TextStyle(fontSize: FontSizes.sm, color: t.a700),

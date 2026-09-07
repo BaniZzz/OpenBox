@@ -306,11 +306,24 @@ ueejavelin 实例是公司共用网关（tony、员工、mac-fleet 等用户都�
 
 ## 6. 前端与移动端
 
-- 新增 `/billing`：两张套餐卡、当前余额、本月用量明细（按 modality）、兑换码输入。
-- DesktopTab：无套餐时 CTA 改为「开通套餐」。
-- 回合前错误码的两条文案与按钮。
-- ContextPanel 的花费显示改读 `usage_events`。
-- 移动端按 1:1 移植惯例跟进（locale 文件逐字节复制）。
+- Web 已上线 `/app/billing/:tab?`（订购/用量/订单）、当前空间余额、套餐、充值和待支付订单恢复。
+- 移动端已于 2026-09-06 完成同等三页、用户行余额、workspace 隔离缓存、前后台恢复查询；locale 继续逐字节复制 Web。
+- `TokenUsage.credits` 在移动端保持 nullable decimal string，金额/积分格式化不经过浮点数。
+
+### 6.1 支付宝移动 SDK（2026-09-06 技术接入）
+
+- Android 使用官方 Maven `com.alipay.sdk:alipaysdk-android:15.8.42`；iOS Profile/Release 使用官方 CocoaPods `AlipaySDK-iOS 15.8.30`。
+- 新增 `POST /api/billing/orders/{order_id}/app-checkout`。服务端以 RSA2 生成 `alipay.trade.app.pay` 的 `QUICK_MSECURITY_PAY` payload；App 只拿短期签名串，不包含或生成商户私钥。
+- App SDK 回传值只决定交互提示，**不能入账**。支付订单和 workspace 积分仍只由支付宝签名通知或服务端主动 `trade.query` 推进。
+- App 回到前台会主动刷新订单；订单页每 15 秒最多查询 3 条待核对订单，避免照搬 Web `pageshow` 后漏单。
+- iOS Debug 模拟器按测试策略不链接 SDK，使用 guarded 外部收银台回退；真机 Profile/Release 链接 SDK。当前 `AlipaySDK-iOS 15.8.30` 已包含 arm64/x86_64 simulator slice，但模拟器没有支付宝客户端，因此即使链接也只能验证 MethodChannel/SDK 与 H5 兜底，不能代替安装支付宝的 iPhone 做原生唤起验收。Pods 默认探测配置固定为 Debug，保持模拟器构建为原生 arm64。
+- 后端生产镜像 `20260906-app-pay-f9247f1` 已部署到 `https://ai.bossipai.com.cn`；构建保留了生产 `c8fea7f` 的舰队购买/续费门禁，当前无需数据库迁移。商户 key 沿用服务器只读 secret，不进入 App、仓库或镜像。
+
+### 6.2 发布门禁
+
+- [ ] 商户 App ID、应用私钥/支付宝公钥及两端应用绑定信息到齐后，分别在 Android/iOS 真机完成付款、取消、回调延迟、杀后台恢复与重复点击测试。
+- [ ] iOS 上架前由产品/法务确认 App Review Guidelines 3.1.1 下的 IAP、跨平台权益或地区 entitlement 路径；技术接入完成不代表可直接提交审核。
+- [ ] 在上述两项通过前，iOS 购买入口不得作为正式 App Store 能力对外承诺；余额、用量和既有权益查询不受影响。
 
 ---
 

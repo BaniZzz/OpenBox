@@ -1,10 +1,10 @@
 // The reasoning strength sent with the next prompt (web
 // `features/chat/hooks/useReasoningChoice.ts`).
 //
-// Model variants are picked independently from the model itself: only
-// variants the active model declares are selectable, and "default" clears the
-// conversation override. Picks are kept per conversation *and* model so
-// switching models cannot leak an unsupported effort into the next request.
+// On mobile, variants are the second step of the model picker: only variants
+// the chosen model declares are selectable, and "default" clears the
+// conversation override. Picks are stored per conversation *and* model so a
+// later switch cannot leak an unsupported effort into the next request.
 library;
 
 import '../../../shared/models/app_config.dart';

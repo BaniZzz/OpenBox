@@ -6,6 +6,7 @@ import 'dart:async';
 /// `/api/auth/*` automatically.
 class AuthSession {
   String? accessToken;
+  String? userId;
 
   /// Wired by the auth controller: performs POST /api/auth/refresh (+ /me)
   /// and returns the new access token, or null on failure (→ logged out).

@@ -16,7 +16,9 @@ const _fallbackLang = 'en-US';
 const _langStorageKey = 'bossip:lang';
 
 const _namespaces = [
+  'admin',
   'auth',
+  'billing',
   'chat',
   'common',
   'cron',
@@ -41,7 +43,9 @@ class I18nBundle {
     for (final lang in supportedLangs) {
       final byNs = <String, dynamic>{};
       for (final ns in _namespaces) {
-        final raw = await rootBundle.loadString('assets/locales/$lang/$ns.json');
+        final raw = await rootBundle.loadString(
+          'assets/locales/$lang/$ns.json',
+        );
         byNs[ns] = jsonDecode(raw);
       }
       data[lang] = byNs;
@@ -99,8 +103,7 @@ class I18nState {
     final path = colon == -1 ? key : key.substring(colon + 1);
     for (final lang in [language, _fallbackLang]) {
       if (count != null) {
-        final suffix =
-            count == 1 && lang.startsWith('en') ? '_one' : '_other';
+        final suffix = count == 1 && lang.startsWith('en') ? '_one' : '_other';
         final plural = bundle.lookup(lang, namespace, '$path$suffix');
         if (plural != null) return plural;
       }

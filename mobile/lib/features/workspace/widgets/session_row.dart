@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../shared/api/auth_store.dart';
 import '../../../shared/appearance/tokens.dart';
 import '../../../shared/appearance/type_scale.dart';
 import '../../../shared/i18n/i18n.dart';
@@ -29,16 +30,21 @@ class SessionRow extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final t = context.tokens;
     final i18n = ref.watch(i18nProvider);
+    final currentUserId = ref.watch(authProvider).user?.id;
+    final owned = session.userId == null || session.userId == currentUserId;
     final title = session.title.isEmpty
         ? i18n.t('workspace:untitledChat')
         : session.title;
+    final label = !owned && session.ownerUsername?.isNotEmpty == true
+        ? '$title · ${session.ownerUsername}'
+        : title;
     return Material(
       color: active ? t.n200 : Colors.transparent,
       borderRadius: BorderRadius.circular(Radii.md),
       child: InkWell(
         borderRadius: BorderRadius.circular(Radii.md),
         onTap: onOpen,
-        onLongPress: () => _showActions(context, i18n, t),
+        onLongPress: owned ? () => _showActions(context, i18n, t) : null,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
           child: Row(
@@ -49,7 +55,7 @@ class SessionRow extends ConsumerWidget {
               ],
               Expanded(
                 child: Text(
-                  title,
+                  label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -79,8 +85,10 @@ class SessionRow extends ConsumerWidget {
           children: [
             ListTile(
               leading: Icon(Icons.edit_outlined, color: t.n700, size: 20),
-              title: Text(i18n.t('workspace:rename'),
-                  style: TextStyle(fontSize: FontSizes.base, color: t.ink)),
+              title: Text(
+                i18n.t('workspace:rename'),
+                style: TextStyle(fontSize: FontSizes.base, color: t.ink),
+              ),
               onTap: () {
                 Navigator.pop(sheetContext);
                 onRename();

@@ -11,7 +11,8 @@ from sqlalchemy import case, func, select
 
 from auth.middleware import get_current_user
 from auth.workspace import get_workspace, require_workspace_role
-from billing.payments import apply_receipt, cancel_order, continue_order, create_order, order_view, refresh_order
+from billing.payments import (apply_receipt, cancel_order, continue_order, create_app_checkout,
+                              create_order, order_view, refresh_order)
 from billing.providers import get_provider, providers
 from billing.service import BillingError, billing_mode, lock_balance
 from billing.plans import plan_catalog
@@ -142,6 +143,7 @@ async def payment_providers(workspace: dict = Depends(get_workspace)):
         "confirmation_mode": getattr(provider, "confirmation_mode", "callback"),
         "supports_status_query": callable(getattr(provider, "query_payment", None)),
         "supports_cancel": callable(getattr(provider, "close_payment", None)),
+        "supports_app_checkout": callable(getattr(provider, "create_app_checkout", None)),
         "refresh_checkout": bool(getattr(provider, "refresh_checkout", False))}
         for name, provider in providers().items()]}
 
@@ -226,6 +228,20 @@ async def resume_checkout(order_id: str, workspace: dict = Depends(require_works
     except Exception as exc:
         raise HTTPException(502, detail={"code": "PAYMENT_CHECKOUT_FAILED",
             "message": "Unable to create checkout; retry this order"}) from exc
+
+
+@router.post("/orders/{order_id}/app-checkout")
+async def native_app_checkout(order_id: str,
+                              workspace: dict = Depends(require_workspace_role("owner", "admin")),
+                              user: dict = Depends(get_current_user)):
+    try:
+        return await create_app_checkout(workspace_id=workspace["id"], user_id=user["user_id"],
+                                         order_id=order_id)
+    except BillingError as exc:
+        raise _error(exc) from exc
+    except Exception as exc:
+        raise HTTPException(502, detail={"code": "PAYMENT_CHECKOUT_FAILED",
+            "message": "Unable to create app checkout; retry this order"}) from exc
 
 
 @router.post("/webhooks/{provider_name}")
