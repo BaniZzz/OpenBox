@@ -25,18 +25,45 @@ What the registry cannot tell you:
 Always `action="estimate"` first on anything unusual. It runs the full
 validation and costs nothing.
 
+## The selected model is binding
+
+The model menu's second line may contain `person_selected_model=<id>`, backed
+by the model and resolution selected in the composer session. Treat that as a
+creative premise, not a default that may be improved or replaced silently.
+
+- Split and run `plan_shots.py` with that model's live duration floor and
+  ceiling. Seedance is at most 15s per shot (about 55 Chinese characters at a
+  normal pace); Wan 3.0 is at most 30s; SD tiers follow the registry.
+- State “按你选的 <模型> <分辨率> 规划” on the complete shot card.
+- If the selection cannot carry a line, resolution, or requested reference,
+  explain the exact incompatibility and offer model/material choices. Only the
+  person changes the selection; never silently change model or tier.
+- A mid-session selection change invalidates splitting, prompts affected by
+  capabilities, and the estimate. Read the menu again and show a new shot card.
+- With no `person_selected_model`, use the registry default and label that fact
+  on the card.
+
+Reference material has its own compatibility constraints. The 720p SD tier
+drops video references upstream; propose 1080p or different material rather
+than paying for a take that ignores the video. An image/video reference should
+have aspect ratio 0.4–2.5. Outside that range, explain that a centered crop or
+different asset is needed; do not upload it elsewhere or tunnel around access.
+
 ## Keeping the presenter identical across shots
 
 In order of strength:
 
-1. **The same reference image on every shot**, and a prompt that describes the
-   *action* rather than re-describing the person. "画面中的人物自然看向镜头"
-   beats a paragraph about her face and clothes — a full description competes
-   with the photo. How the reference travels is the backend's problem: it
-   picks the shape each model actually honours.
-2. **One `seed` reused across shots**, on a model that accepts one. Same seed
+1. **The same original person video on every shot**, where the selected model
+   supports it. A video exposes multiple angles and is generally a stronger
+   identity anchor than one image. The 720p SD tier is not eligible because it
+   drops video references.
+2. **The same original reference image on every shot** when video is absent or
+   unsupported, with a prompt that describes the *action* rather than
+   re-describing the person. "画面中的人物自然看向镜头" beats a paragraph
+   about her face and clothes — a full description competes with the image.
+3. **One `seed` reused across shots**, on a model that accepts one. Same seed
    plus same anchor removes most of the remaining drift, for free.
-3. **`last_frame` of shot N as the `first_frame` of shot N+1**, on a model that
+4. **`last_frame` of shot N as the `first_frame` of shot N+1**, on a model that
    accepts frame roles. Strongest continuity available, and the honest way to
    do it — the shots genuinely join.
 

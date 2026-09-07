@@ -442,6 +442,35 @@ async def update_session_tokens(session_id: str, step_tokens: TokenUsage, user_i
     })
 
 
+async def update_session_context(
+    session_id: str, context: int, limit: int, user_id: str = "default"
+) -> TokenUsage | None:
+    """Set only the context/limit fields of session token_usage and broadcast.
+
+    The cumulative input/output/cache/total/cost fields are read fresh from the
+    database and written back untouched.  Callers must not write a stale
+    ``token_usage`` snapshot they loaded earlier — that used to wipe out the
+    totals accumulated by ``update_session_tokens`` on previous steps.
+    """
+    session = await get_session(session_id, user_id=user_id)
+    if not session:
+        return None
+
+    cu = session.token_usage or TokenUsage()
+    cu.context = context
+    cu.limit = limit
+
+    await update_session(session_id, user_id=user_id, token_usage=cu)
+
+    from bus.events import SESSION_UPDATED
+    bus.publish(SESSION_UPDATED, {
+        "userId": user_id,
+        "sessionId": session_id,
+        "token_usage": cu.model_dump(),
+    })
+    return cu
+
+
 # --- Message Operations ---
 
 async def create_user_message(

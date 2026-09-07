@@ -30,6 +30,7 @@ lint_prompt = _load("lint_prompt")
 def test_every_bundled_script_exists_and_is_executable():
     expected = {
         "state.py",
+        "split_script.py",
         "lint_prompt.py",
         "compare_transcript.py",
         "build_ass.py",
@@ -196,13 +197,12 @@ def test_urls_and_asset_ids_are_kept_out_of_prompt_text():
     assert any(issue["code"] == "unsafe_asset_reference" for issue in report["issues"])
 
 
-def test_the_line_length_rule_warns_before_it_fails():
+def test_the_line_length_rule_is_advisory_because_the_model_is_authority():
     warned = _lint(GOOD.replace("今天教你三招", "今" * 44), script="今" * 44)
-    failed = _lint(GOOD.replace("今天教你三招", "今" * 60), script="今" * 60)
+    longer = _lint(GOOD.replace("今天教你三招", "今" * 60), script="今" * 60)
 
     assert warned["ok"] is True and warned["warnings"]
-    assert failed["ok"] is False
-    assert any(issue["code"] == "dialogue_too_long" for issue in failed["issues"])
+    assert longer["ok"] is True and longer["warnings"]
 
 
 # ── the loose notebook ──────────────────────────────────────────────────────

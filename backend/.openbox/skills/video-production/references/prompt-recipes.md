@@ -1,27 +1,26 @@
-# Prompt shape for a spoken shot
+# 口播段 prompt 工艺
 
-Six parts. They are here because each one fixes a failure that shows up
-otherwise, not because the model requires a template.
+> 中文范例与规则蒸馏自创意工作台 2026-04～07 的 4,968 条
+> Seedance 2.0 真实生成记录（含 91 条运营精选、148 条已标 badcase、
+> 229 条 failed）。只移植工艺，不移植旧工作台的 URI 语法或硬闸。
 
-1. `全片一致的画面基底：` + the shared anchor, **byte for byte identical** in
-   every shot. This is what keeps the presenter, wardrobe, set and light the
-   same; paraphrasing it between shots is the single most common cause of a
-   presenter who changes halfway through.
-2. `固定镜头` — a talking head that drifts or pushes in cuts badly against the
-   next shot.
-3. Framing: `半身中景` / `近景`. Vertical 9:16 crops a wide shot into a distant
-   figure nobody can read.
-4. `自然肢体动作：` + one restrained gesture. Without it the model either
-   freezes the presenter or has them wave through the whole line.
-5. The line: a speech lead, then `@` immediately followed by the **exact**
-   words. Anything after `@` is what gets said, so put nothing else there.
-6. `无字幕，字幕只能后期合成` — captions are added in post from the transcript.
-   A model that burns in its own leaves two sets on the final cut.
+## 讲稿结构
 
-Canonical shape:
+讲稿只写会被念出的台词，按四段意图组织：
+
+1. **钩子**：两秒内给反差、利益点或问题。
+2. **展开**：按一至三个清楚讲点给事实、方法或演示。
+3. **转折**：纠正常见误解，或把前文落到真实使用情境。
+4. **收尾**：一句总结，再给自然的收藏、评论或行动邀请。
+
+用户未给时长时先按 45–60 秒成稿；不要先让用户在看不到稿件时猜时长。
+
+## 标准骨架
+
+每段按下列顺序写，且把共享画面基底逐字复制：
 
 ```text
-全片一致的画面基底：<逐字 anchor>
+全片一致的画面基底：<逐字一致的主体、场景、服装和光线>
 固定镜头。构图：竖屏 9:16 半身中景。
 自然肢体动作：使用与本句匹配的克制手势。
 语气：自然、清晰、有感染力。
@@ -29,24 +28,113 @@ Canonical shape:
 无字幕，字幕只能后期合成。
 ```
 
-Check it with `$S/lint_prompt.py --prompt-file seg1.txt --script "…"
---anchor "…"`
-(`S=/opt/openbox/skills/video-production/scripts`). It reports; you decide.
+`@` 后只放台词，台词结束后换行；不要让画面描述变成模型要念的词。
 
-## Per role
+## 七条军规
 
-- **hook** — energetic, slight forward lean. Earn the next two seconds.
-- **body** — confident and informative, restrained counting gestures.
-- **transition** — warm and conversational, one small nod.
-- **closing** — friendly invitation to comment or save, natural smile.
-- **b-roll** — a shot with nobody speaking. No line, no framing rule, no tone;
-  keep the visual anchor and `无字幕`. Lint it with `--broll`.
+1. **台词有明确引导语和 `@` 标记。** `@` 后逐字复制本段台词；边界
+   模糊是说错话、说梦话和胡嘴的首要来源。
+2. **显式声明镜头纪律。** 默认固定镜头与中景/半身。边走边说可以写
+   `镜头跟随人物走动`，但它是有意选择，不是默认运镜。
+3. **给一个克制的自然动作。** 手势随语气舒展，避免全程僵住或挥手。
+4. **写语气，不写语速。** 精选集中语气出现率 80%，语速出现率 0%。
+   语速词会和真实台词、显式 duration 互相竞争；节奏由讲稿和
+   `plan_shots.py --rate` 决定。
+5. **不要让生成模型烧字幕。** 显式写 `无字幕`，字幕只用 STT 实际词
+   后期合成；生成端文字会写错且无法修复。
+6. **场景与质感堆料要克制。** 长篇光影、材质、8K/棚拍修辞在问题组
+   的出现率约为精选集两倍，并与换人、背景漂移相关。优先素材锚；
+   文字场景控制在一两句，人物基底一个字不动。
+7. **失败先准备原样重试一次。** 59 条真实重试链都是零改动重试，说明
+   很多失败来自生成方差。任何重试仍是付费实拍，必须重新报段数、秒数、
+   模型、分辨率和预计费用并获得确认；原样重试仍失败后才局部改 prompt。
 
-## Referring to material
+## 素材 role 与编号
 
-Number images and videos separately in prose: `参考图片1`, `参考视频1`. Never
-put a URL, an `asset://` id or a file path in prompt text — the reference
-travels as a structured input, and an id in the prose just confuses the model.
+| role | 可用类型 | 用途 |
+|---|---|---|
+| `person` | image / video | 锁人物；视频含多角度，通常比单图更稳 |
+| `scene` | image | 锁背景、机位、光感和色调 |
+| `outfit` | image | 指定服装或分段换装 |
+| `prop` | image | 指定手持、展示的产品或道具 |
 
-Keep scene description to one short clause. Do not ask for camera moves, speed
-changes, on-screen text, logos, brand or celebrity likeness, or medical claims.
+- 按用户标注使用 role，不猜素材用途。
+- 图片与视频分别编号：第一个 video 是 `参考视频1`，第一个 image 是
+  `参考图片1`，不是按混合输入的全局位置编号。
+- 多人物要逐段写清谁出镜，例如“参考视频1的人物与参考图片2的人物并肩而坐”。
+- 换装要组合指代，例如“参考视频1的人物穿着参考图片2的服装”；只在对应段
+  更换服装编号。
+- prompt 正文只写编号，不得出现 URL、`asset://`、内部 id 或文件路径。
+- 零素材时直接用文字写主体和场景，并在每段逐字复制；不要自动生成参考图，
+  也不要把某段生成帧变成下一段人物锚。
+
+## 中文 few-shot 范例
+
+这些范例已泛化；`<台词>` 必须换成本段完整原文。
+
+**HOOK（坐姿定机位）**
+
+```text
+全片一致的画面基底：参考视频1的人物坐在参考图片1的简洁室内场景中，
+人物、服装、背景与柔和室内光全片保持一致。
+固定镜头中景，人物面对镜头，身体微微前倾，手势随语气自然舒展。
+语气：热情有力。
+面对镜头开口说出@还在为小户型显乱发愁？先别急着买收纳柜。
+无字幕，字幕只能后期合成。
+```
+
+**BODY（数字或断言型讲点）**
+
+```text
+全片一致的画面基底：参考视频1的人物坐在参考图片1的简洁室内场景中，
+人物、服装、背景与柔和室内光全片保持一致。
+固定镜头半身，人物姿态端正，用一只手克制地比出数字。
+语气：自信、专业、自然。
+面对镜头开口说出@先统一台面颜色，再把高频用品集中到一个区域。
+无字幕，字幕只能后期合成。
+```
+
+**CLOSING（互动收尾）**
+
+```text
+全片一致的画面基底：参考视频1的人物坐在参考图片1的简洁室内场景中，
+人物、服装、背景与柔和室内光全片保持一致。
+固定镜头中景，人物自然微笑并轻轻点头。
+语气：亲切、轻快。
+面对镜头开口说出@记住，先做减法再收纳，空间才会真正清爽。
+无字幕，字幕只能后期合成。
+```
+
+**换装/换景（仅用户明确要求时）**
+
+```text
+全片一致的画面基底：参考视频1的人物，面部、发型和姿态保持一致。
+固定镜头中景，参考视频1的人物穿着参考图片1的服装，背景为参考图片2的场景。
+自然肢体动作：手势随语气舒展。语气：从容、专业。
+面对镜头开口说出@<本段逐字台词>
+无字幕，字幕只能后期合成。
+```
+
+**边走边说（街拍/探店）**
+
+```text
+全片一致的画面基底：参考视频1的人物穿着参考图片1的服装，走在参考图片2的场景中。
+镜头跟随人物走动，保持半身构图，人物自然看向镜头，手势随语气舒展。
+语气：轻快、自然。
+边走边开口说出@<本段逐字台词>
+无字幕，字幕只能后期合成。
+```
+
+## 合规自审
+
+提交前逐条看一遍：
+
+- 不写医疗、解剖、诊断或疗效承诺等高风险词；
+- 不仿品牌、名人或受保护 IP，不要求 logo 或水印；
+- `person` 参考不是公众人物；真人素材走产品自身的身份授权流程；
+- 无外部素材 URL、网盘、隧道或对外监听；
+- 画面不生成文字，台词与 `@` 后内容一致；
+- 素材编号存在，并且每项都列入本段结构化输入。
+
+Run `$S/lint_prompt.py --prompt-file seg1.txt --script "…" --anchor "…"`.
+It reports; the creator decides.

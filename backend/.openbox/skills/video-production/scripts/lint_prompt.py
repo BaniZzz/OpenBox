@@ -37,6 +37,10 @@ PROMPT_LINT_RULES = {
         ),
         "accepted_examples": ["@<本段逐字台词>", "Speak exactly: @<exact segment dialogue>"],
     },
+    "dialogue_mismatch": {
+        "requirement": "Text after @ should match the segment dialogue; differences are warnings.",
+        "accepted_examples": ["@<本段逐字台词>"],
+    },
     "visual_continuity": {
         "requirement": "Declare one consistent visual base/anchor for the whole video.",
         "accepted_examples": [
@@ -106,7 +110,10 @@ PROMPT_LINT_RULES = {
         "accepted_examples": ["Remove the invalid id or replace it with a ready owned asset id"],
     },
     "dialogue_too_long": {
-        "requirement": "A segment may contain at most 48 normalized spoken characters.",
+        "requirement": (
+            "Prefer at most 40 normalized spoken characters; the selected model's live "
+            "duration limit, not this linter, is authoritative."
+        ),
         "accepted_examples": ["Split this dialogue into two contiguous segments"],
     },
     "generated_output_as_reference": {
@@ -154,12 +161,14 @@ def lint_prompt(
 
     if speech:
         spoken_length = len(normalize_spoken_text(script_text))
-        if spoken_length > 48:
-            fail("dialogue_too_long", f"台词 {spoken_length} 字，超过 48 字硬上限")
-        elif spoken_length > 40:
+        if spoken_length > 40:
             warnings.append(f"台词 {spoken_length} 字，建议压到 40 字以内")
-        if f"@{script_text.strip()}" not in prompt:
+        if "@" not in prompt:
             fail("dialogue_exact", "prompt 必须用 @ 紧接本段逐字台词")
+        else:
+            prompted_dialogue = prompt.split("@", 1)[1].splitlines()[0].strip()
+            if normalize_spoken_text(prompted_dialogue) != normalize_spoken_text(script_text):
+                warnings.append("[dialogue_mismatch] @ 后台词与台词字段不一致")
 
     anchor = visual_anchor.strip()
     anchor_is_literal = bool(anchor) and anchor.casefold() in prompt.casefold()
@@ -183,11 +192,14 @@ def lint_prompt(
             "固定镜头",
             "固定机位",
             "锁定镜头",
+            "镜头跟随",
             "fixed shot",
             "fixed camera",
             "locked-off camera",
             "locked off camera",
             "static camera",
+            "tracking shot",
+            "camera follows",
         ),
     ):
         fail("fixed_camera", "prompt 必须显式声明固定镜头")
