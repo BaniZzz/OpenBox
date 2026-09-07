@@ -1,0 +1,97 @@
+{
+  "page": {
+    "title": "Authorizations",
+    "subtitle": "Connect platform accounts to this workspace for posting and data access."
+  },
+  "capability": {
+    "login": "Sign-in",
+    "publish": "Posting"
+  },
+  "platform": {
+    "notConfigured": "Not configured on this deployment",
+    "grantHint": "After scanning once, no new scan is needed for up to {{days}} days; re-authorize when it lapses or is revoked in the app.",
+    "genericHint": "Scan once to use this platform's capabilities.",
+    "emptyManager": "No account yet — use “Connect account” to start.",
+    "emptyMember": "No account yet — ask a workspace admin to connect one."
+  },
+  "actions": {
+    "bind": "Connect account",
+    "reauthorize": "Re-authorize",
+    "probe": "Check",
+    "unbind": "Disconnect",
+    "publish": "Post to Douyin"
+  },
+  "status": {
+    "bound": "Authorized",
+    "expiring": "Expiring soon",
+    "expired": "Expired",
+    "revoked": "Disconnected"
+  },
+  "account": {
+    "unnamed": "Unnamed account",
+    "openId": "openid {{id}}…",
+    "validUntil": "Valid until {{date}}",
+    "renewalsLeft_one": "{{count}} automatic renewal left",
+    "renewalsLeft_other": "{{count}} automatic renewals left",
+    "needsReauth": "Needs a new scan",
+    "lastProbe": "Last checked {{date}}"
+  },
+  "unbind": {
+    "title": "Disconnect this account?",
+    "body": "“{{name}}” will be removed from this workspace. To revoke it entirely, use Douyin › Settings › Account & security › Authorizations."
+  },
+  "publish": {
+    "title": "Post to Douyin",
+    "intro": "Pick a video from Resources to get a posting QR code. Scan it with the Douyin app and confirm there.",
+    "video": "Video",
+    "pickVideo": "Pick a video…",
+    "noVideos": "No postable videos in Resources (mp4/mov, ≤128 MB)",
+    "caption": "Caption",
+    "captionPlaceholder": "Up to 55 characters",
+    "hashtags": "Hashtags",
+    "hashtagsPlaceholder": "Separate with spaces or commas",
+    "privacy": "Visibility",
+    "privacyPublic": "Everyone",
+    "privacyFriends": "Friends",
+    "privacyPrivate": "Only me",
+    "generate": "Generate QR code",
+    "scanHint": "Open the Douyin app and scan",
+    "scanSteps": "Douyin downloads the video and opens its publish page; press Publish there.",
+    "waiting": "Waiting for the post…",
+    "expiresIn": "QR code expires in {{time}}",
+    "noTracking": "No tracking id this time; this view will not update after you post.",
+    "done": "Posted on Douyin",
+    "itemId": "Item id {{id}}",
+    "expired": "QR code expired",
+    "expiredHint": "Close and generate a new one.",
+    "qrAlt": "Douyin posting QR code",
+    "videosError": "Could not load videos (object storage unavailable)"
+  },
+  "toast": {
+    "bound": "Account connected",
+    "unbound": "Account disconnected",
+    "probeOk": "Authorization is valid",
+    "probeExpired": "Authorization expired — re-authorize"
+  },
+  "state": {
+    "error": "Failed to load",
+    "noPlatforms": "No platform is set up on this deployment."
+  },
+  "errors": {
+    "PLATFORM_ERROR": "Something went wrong, try again later",
+    "PLATFORM_DENIED": "You cancelled the authorization on the platform",
+    "PLATFORM_STATE_INVALID": "The authorization link expired — start again",
+    "PLATFORM_NOT_CONFIGURED": "Not configured on this deployment",
+    "PLATFORM_AUTH_REQUIRED": "Authorization expired — re-authorize",
+    "PLATFORM_API_ERROR": "The platform returned an error, try again later",
+    "PLATFORM_ACCOUNT_NOT_FOUND": "Account not found",
+    "PLATFORM_UNKNOWN": "Unknown platform",
+    "PUBLISH_FILE_NOT_FOUND": "Video not found",
+    "PUBLISH_FILE_TYPE": "Only mp4/mov videos are supported",
+    "PUBLISH_FILE_TOO_LARGE": "Video exceeds Douyin's 128 MB limit",
+    "PUBLISH_STAGE_FAILED": "Could not prepare the video, try again",
+    "PUBLISH_JOB_NOT_FOUND": "Posting record not found",
+    "WORKSPACE_ROLE_REQUIRED": "Only workspace admins can connect or disconnect accounts",
+    "WORKSPACE_FORBIDDEN": "No access to this workspace"
+  }
+}

@@ -296,6 +296,22 @@ def create_app() -> FastAPI:
     from api.billing import router as billing_router
     application.include_router(billing_router)
 
+    # ── 授权中心: platform accounts, publish jobs, notifications, webhooks ──
+    from api.platform_accounts import (
+        jobs_router as publish_jobs_router,
+        platforms_router,
+        public_router as platform_callback_router,
+        router as platform_accounts_router,
+    )
+    from api.notifications import router as notifications_router
+    from api.webhooks_douyin import router as douyin_webhook_router
+    application.include_router(platform_accounts_router)
+    application.include_router(platform_callback_router)  # No auth — OAuth redirect lands here
+    application.include_router(platforms_router)
+    application.include_router(publish_jobs_router)
+    application.include_router(notifications_router)
+    application.include_router(douyin_webhook_router)  # No auth — signed by the platform
+
     # ── Agent routes ──
     agent_router = APIRouter(prefix="/api/agent", tags=["Agent"])
 

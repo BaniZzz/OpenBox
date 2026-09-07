@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { useMatch, useNavigate } from "react-router"
-import { Blocks, Clock, CreditCard, Layers, PanelLeft, Plus, Search } from "lucide-react"
+import { Blocks, Clock, CreditCard, KeyRound, Layers, PanelLeft, Plus, Search } from "lucide-react"
 import { cn } from "@/shared/lib/cn"
 import { BrandMark } from "@/shared/ui/BrandMark"
 import { paths } from "@/shared/router/paths"
@@ -127,6 +127,19 @@ export function Sidebar() {
             <Layers size={16} strokeWidth={2.1} />
           </span>
           {t("resourceCenter")}
+        </button>
+
+        <button
+          type="button"
+          // Sits right under the resource centre: the files live there, the
+          // accounts they get posted from live here.
+          onClick={() => navigate(paths.authCenter)}
+          className="text-ink hover:bg-hairsoft flex h-10 flex-none items-center gap-2.5 rounded-full px-1.5 text-base"
+        >
+          <span className="flex size-7 flex-none items-center justify-center">
+            <KeyRound size={16} strokeWidth={2.1} />
+          </span>
+          {t("authCenter")}
         </button>
 
         <button

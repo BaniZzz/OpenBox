@@ -11,6 +11,7 @@ export const paths = {
   billing: (tab?: string) => (tab ? `/app/billing/${tab}` : "/app/billing"),
   cron: "/app/cron",
   skills: "/app/skills",
+  authCenter: "/app/auth-center",
   resources: (projectId?: string) =>
     projectId ? `/app/resources?project=${projectId}` : "/app/resources",
   adminFleet: "/app/admin/fleet",
@@ -23,6 +24,7 @@ export const routePatterns = {
   billing: "billing/:tab?",
   cron: "cron",
   skills: "skills",
+  authCenter: "auth-center",
   resources: "resources",
   adminFleet: "admin/fleet",
 } as const

@@ -31,6 +31,7 @@ export function Topbar({ panelOpen, onTogglePanel, statusSlot }: TopbarProps) {
   const isSettings = location.pathname.includes("/settings")
   const isCron = location.pathname.includes("/cron")
   const isResources = location.pathname.includes("/resources")
+  const isAuthCenter = location.pathname.includes("/auth-center")
   const isBilling =
     location.pathname === paths.billing() || location.pathname.startsWith(`${paths.billing()}/`)
   const session = useMemo(
@@ -52,7 +53,9 @@ export function Topbar({ panelOpen, onTogglePanel, statusSlot }: TopbarProps) {
         ? { title: t("scheduledTasks"), subtitle: t("scheduledTasksHint") }
         : isResources
           ? { title: t("resourceCenter"), subtitle: t("resourceCenterHint") }
-          : null
+          : isAuthCenter
+            ? { title: t("authCenter"), subtitle: t("authCenterHint") }
+            : null
   const title = standalone?.title ?? session?.title ?? t("untitledChat")
   const subtitle = standalone?.subtitle ?? project?.name ?? t("unsorted")
 

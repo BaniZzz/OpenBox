@@ -479,6 +479,21 @@ class OpenBoxConfig(BaseModel):
     logto_redirect_uri: str = "http://localhost:3000/callback"
     logto_post_logout_redirect_uri: str = "http://localhost:3000"
 
+    # -- Public origin of this deployment (frontend + API on one host) --
+    # Used to build OAuth redirect URIs and to send the browser back after a
+    # third-party authorization round trip, e.g. https://ai.bossipai.com.cn
+    public_base_url: str = ""
+    # Optional dedicated master key for platform tokens; falls back to
+    # WUYING_CHANNEL_KEY so existing deployments need no new secret.
+    secrets_master_key: str = ""
+
+    # -- Douyin open platform (授权中心 first provider; empty = hidden) --
+    douyin_client_key: str = ""
+    douyin_client_secret: str = ""
+    # Must match the console's 授权回调地址 byte for byte; defaults to
+    # {public_base_url}/api/platform-accounts/douyin/callback
+    douyin_redirect_uri: str = ""
+
     # -- Cron (scheduled tasks) --
     # The Wuying deployment shares one cloud desktop across users, so the
     # global concurrency stays small; raise it per-deployment when the sandbox
@@ -733,6 +748,11 @@ def _apply_env_overrides(data: dict) -> dict:
         "logto_jwks_uri": "LOGTO_JWKS_URI",
         "logto_redirect_uri": "LOGTO_REDIRECT_URI",
         "logto_post_logout_redirect_uri": "LOGTO_POST_LOGOUT_REDIRECT_URI",
+        "public_base_url": "PUBLIC_BASE_URL",
+        "secrets_master_key": "SECRETS_MASTER_KEY",
+        "douyin_client_key": "DOUYIN_CLIENT_KEY",
+        "douyin_client_secret": "DOUYIN_CLIENT_SECRET",
+        "douyin_redirect_uri": "DOUYIN_REDIRECT_URI",
     }
     for field_name, env_var in env_map.items():
         value = os.environ.get(env_var)
