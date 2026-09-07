@@ -257,10 +257,19 @@ async def _browser_readiness(ctx: ToolContext) -> str:
     ]
     if effective == "local":
         lines.append("  This is the cloud desktop's Chrome — it does NOT have the user's logins.")
-        lines.append(
-            "  It runs on this desktop, so if a native dialog blocks a script you can "
-            "dismiss it with the `computer` tool and resume (see the skill's handoff section)."
-        )
+        from sandbox.browser import is_headless
+        if is_headless(state.get("chrome")):
+            lines.append(
+                "  It is an isolated HEADLESS browser, started before a graphical session was available. "
+                "Use dev-browser for navigation, input, clicks and page screenshots. "
+                "It is NOT visible to computer screenshots and does not share the desktop user's logins. "
+                "Do not claim the visible cloud desktop is ready, or close this browser without asking."
+            )
+        else:
+            lines.append(
+                "  It runs on this desktop, so if a native dialog blocks a script you can "
+                "dismiss it with the `computer` tool and resume (see the skill's handoff section)."
+            )
         if preference == "remote":
             lines.append(
                 "  The user asked for their own browser, but the extension is not connected, "

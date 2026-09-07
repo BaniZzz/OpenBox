@@ -485,8 +485,16 @@ async def _open_browser(ctx: ToolContext, key: str) -> ToolResult:
         )
 
     effective = state.get("mode", "unknown")
+    from sandbox.browser import is_headless
+    headless = is_headless(state.get("chrome"))
     lines = [f"Browser ready (running as: {effective}, preference: {preference})."]
-    if effective == "local":
+    if effective == "local" and headless:
+        lines.append(
+            "The browser is headless because no graphical desktop session was available at launch. "
+            "Use dev-browser for page actions and screenshots; it is not visible on the cloud desktop. "
+            "Existing browser sessions were not stopped or switched."
+        )
+    elif effective == "local":
         lines.append(
             "This is the cloud desktop's Chrome, so it is on the screen you can "
             "screenshot — but drive pages with the dev-browser skill, not by clicking "
@@ -504,7 +512,7 @@ async def _open_browser(ctx: ToolContext, key: str) -> ToolResult:
     # otherwise requires: opening a browser is still worth doing on a sandbox
     # that cannot produce images, so a failure here degrades to a note.
     note = ""
-    if effective == "local":
+    if effective == "local" and not headless:
         try:
             await _prepare(ctx, key)
             geometry = await take_screenshot(ctx.sandbox)
@@ -518,7 +526,7 @@ async def _open_browser(ctx: ToolContext, key: str) -> ToolResult:
     return ToolResult(
         title=f"browser ready ({effective})",
         output=" ".join(lines) + note,
-        metadata={"mode": effective, "preference": preference},
+        metadata={"mode": effective, "preference": preference, "headless": headless},
     )
 
 

@@ -5,6 +5,51 @@
 
 Logto SSO 的取值另见 [LOGTO_PROD.md](LOGTO_PROD.md)。
 
+## 平台修复机制：2026-09-07 dev-browser
+
+- 同一修复器接入云电脑初始化、预热池验收、通道激活、开机前检查和浏览器首次使用；
+  修复失败时不返回 Ready，保留原桌面供重试，不新增购买或重建。
+- 固定 npm 锁文件，使用 `npm ci --ignore-scripts`，隔离 npm 配置、串行修复、暂存验证
+  后切换；已健康的环境不重复安装。Chrome 仅放行自有专用 profile，不读取旧 worker
+  登录信息；保留正在运行的浏览器及拼音环境。
+- 未连接 Web SDK、尚无图形会话时，使用独立低权限用户的无头 Chrome。浏览器自动化
+  与可见桌面可用性分别报告，不创建第二个 X 桌面，也不强制切换正在运行的浏览器。
+- 已在未分配预热机 `ecd-0b7gj174mc6f23ctq` 上验证修复、幂等执行、真实网页访问、
+  中文输入、点击、无障碍快照及一次真实重启后的恢复。测试期间从预热分配中保留该机，
+  没有创建新账号、订单或额外云电脑。批量及应用发布结果见后续验收记录。
+- 相关回归 **156 项通过**。全量测试仍存在数据库 readiness 测试夹具、旧工具上下文
+  与私有视频模型配置的失败，隔离的原始 main 也能复现这些类别；不能称为全量测试通过。
+- 黄金镜像制作脚本也增加相同运行时和开机检查。未从任何现有用户桌面创建新镜像；
+  即使配置继续使用旧镜像，新建/重建实例也必须经过运行时修复和真实 CDP/relay 验收。
+
+## 单桌面修复：2026-09-07 dev-browser 运行环境
+
+- 仅修复目标桌面 `ecd-4y9s9igraz7hc58ea`，未重启云电脑、action server、隧道或
+  gw2 应用容器，未改动套餐、订阅、数据库、前后端镜像和其他桌面。
+- 旧 BossIP Chrome 启动包装脚本把 OpenBox profile 改写到旧 worker 的目录；该
+  目录属于另一 Linux 用户且权限为 `0700`，Chrome 无法读写，退回默认目录后又被
+  Chrome 151 的远程调试限制拦截。修复只放行当前用户自有、非符号链接的
+  `$HOME/.config/obx-chrome`，不开放旧 worker 目录权限。
+- 为缺失的 `node/npm/npx` 命令接入镜像已有 Node `22.23.1` 运行时。relay 依赖在
+  独立临时目录安装，禁止安装脚本，校验 `tsx`、Playwright、Hono 后再放入正式目录；
+  未升级系统 Node 或其他应用依赖。bootstrap 原先的 `npm install | tail` 会掩盖
+  npm 不存在的错误，现改为调用可备份、失败即停止的修复脚本。
+- 14:54（北京时间）在桌面租约内正常结束该用户的旧 Chrome，备份并复制其本人的
+  默认 profile 到独立 OpenBox profile，再通过生产的 `ensure_browser` 启动。
+  默认 profile 原目录保留，未读取/迁移旧 worker 的登录数据；未修改拼音相关代码。
+- 14:56 实际运行技能所用 `npx --no-install tsx` 客户端：打开 Example Domain、
+  中文填入、按钮点击、页面无障碍快照均通过，临时测试页已关闭。
+  `9333/9222` 均仅监听 `127.0.0.1`，relay 返回 `chromeAvailable=true`，
+  IBus 拼音引擎和候选面板进程存在，action server uptime 连续。
+  本地运行时修复、浏览器、技能执行和桌面租约相关测试共 **37 项通过**。
+- 回滚材料均留在该桌面，不在 gw2：
+  `/opt/openbox/backups/browser-runtime-20260907T064920Z-kgjhva_r/` 保存旧 Chrome
+  包装脚本；`browser-runtime-20260907T065222Z-x9v_sa4z/` 保存成功安装记录；
+  `/opt/openbox/backups/browser-profile-20260907T065417Z-d_pts_yp/default-profile.tar.gz`
+  保存浏览器原数据。目录权限为 `0700`。
+- 此处是 14:56 单桌面修复的历史记录；后续平台修复将真源归并到
+  `backend/sandbox/browser_runtime_repair.py`，见上方平台修复机制及后续验收记录。
+
 ## 当前生产配置：2026-09-07 切换 prod 环境标识
 
 - 按用户确认，将阿里云 gw2 的 `/opt/openbox/config/backend.env` 中

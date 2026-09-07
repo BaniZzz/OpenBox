@@ -17,6 +17,11 @@ from core.log import create_logger
 from db.repository.cloud_desktop_repo import cloud_desktop_repo
 from sandbox.client import SandboxClient
 from sandbox import wuying_ecd
+from sandbox.browser_runtime import (
+    BrowserRuntimeUnavailable,
+    ensure_browser_runtime,
+    ensure_desktop_browser_runtime,
+)
 
 log = create_logger("sandbox.wuying_channel")
 
@@ -158,6 +163,9 @@ class WuyingChannel:
         if kind not in ("direct", "ssh"):
             raise ChannelConfigError("WUYING_CHANNEL must be direct or ssh")
 
+        # Repair new/pooled guests before starting their application channel.
+        await ensure_desktop_browser_runtime(desktop_id)
+
         api_key = (
             decrypt_action_key(record["action_api_key_ciphertext"])
             if record.get("action_api_key_ciphertext") and not rotate_key
@@ -248,9 +256,10 @@ echo OPENBOX_FINGERPRINT="$(ssh-keygen -lf /etc/openbox/tunnel_key.pub -E sha256
         return installed
 
     async def verify(self, record: dict, timeout_sec: int = 180) -> dict:
-        """Require authenticated execution and the fixed 1920x1080 display."""
+        """Require execution/browser readiness; validate a display when present."""
         deadline = asyncio.get_running_loop().time() + timeout_sec
         last_error = "channel did not answer"
+        boot_recovery_attempted = False
         while asyncio.get_running_loop().time() < deadline:
             try:
                 provisional = {**record, "tunnel_state": "up"}
@@ -269,17 +278,50 @@ echo OPENBOX_FINGERPRINT="$(ssh-keygen -lf /etc/openbox/tunnel_key.pub -E sha256
                     ttl_seconds=60,
                 ):
                     result = await sandbox.execute(
-                        "hostname; obx-x obx-display; "
-                        "obx-x sh -c \"xrandr --current | grep -qE '1920x1080[^0-9]'\"",
+                        "set -eu; hostname; "
+                        "if obx-x true >/dev/null 2>&1; then obx-x obx-display; "
+                        "obx-x sh -c \"xrandr --current | grep -qE '1920x1080[^0-9]'\"; "
+                        "else echo OPENBOX_NO_DISPLAY; fi",
                         timeout=20,
                     )
                 if result.exit_code != 0:
                     raise RuntimeError(result.stderr.strip() or "desktop is not 1920x1080")
+                await ensure_browser_runtime(sandbox)
+                from sandbox.browser import ChromeUnavailable, RelayUnavailable, ensure_browser, is_headless
+                # Runtime presence alone is insufficient: require live CDP
+                # and the local relay before the activation worker says Ready.
+                try:
+                    browser = await ensure_browser(sandbox, record["desktop_id"], "local")
+                except (ChromeUnavailable, RelayUnavailable) as exc:
+                    raise BrowserRuntimeUnavailable("Desktop browser could not start safely") from exc
+                if (
+                    not (browser.get("chrome") or {}).get("webSocketDebuggerUrl")
+                    or not (browser.get("relay") or {}).get("chromeAvailable")
+                ):
+                    raise BrowserRuntimeUnavailable("Desktop browser CDP/relay did not pass readiness")
                 now = datetime.now(timezone.utc)
                 await cloud_desktop_repo.update(
                     record["id"], tunnel_state="up", last_seen_at=now, channel_error=None
                 )
-                return {"hostname": result.stdout.splitlines()[0].strip(), "last_seen_at": now}
+                return {
+                    "hostname": result.stdout.splitlines()[0].strip(),
+                    "last_seen_at": now,
+                    "display_ready": "OPENBOX_NO_DISPLAY" not in result.stdout,
+                    "browser_presentation": "headless" if is_headless(browser["chrome"]) else "headed",
+                }
+            except BrowserRuntimeUnavailable as exc:
+                # Let durable activation retry this desktop, not buy another.
+                await cloud_desktop_repo.update(record["id"], channel_error=str(exc))
+                raise
+            except (httpx.ConnectError, httpx.ReadTimeout) as exc:
+                if not boot_recovery_attempted:
+                    boot_recovery_attempted = True
+                    # A failed boot dependency can keep the action server
+                    # offline. Cloud Assistant can repair it without a live
+                    # application tunnel or any desktop purchase/rebuild.
+                    await ensure_desktop_browser_runtime(record["desktop_id"])
+                last_error = f"{type(exc).__name__}: {exc}"[:2000]
+                await asyncio.sleep(3)
             except Exception as exc:
                 last_error = f"{type(exc).__name__}: {exc}"[:2000]
                 await asyncio.sleep(3)

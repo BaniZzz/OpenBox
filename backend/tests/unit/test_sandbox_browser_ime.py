@@ -30,3 +30,18 @@ def test_chrome_launch_does_not_require_sudo_in_a_restricted_container():
     assert 'if sudo -n -u "$U" true' in script
     assert 'U="$CURRENT_U"' in script
     assert "setsid $SUDO env" in script
+
+
+def test_chrome_launch_does_not_pick_another_users_latest_profile():
+    script = _chrome_launch_script()
+    assert 'ls -dt /workspace/openbox/users/*' not in script
+    assert '"$CURRENT_U" = "$U"' in script
+
+
+def test_active_managed_profile_is_not_mutated_or_force_closed():
+    script = _chrome_launch_script()
+    guard = script.index('managed browser profile is in use')
+    assert guard < script.index('PREF="$PROF/Default/Preferences"')
+    assert guard < script.index('rm -rf "$PROF/Default/Sessions"')
+    assert 'kill -0 "$LOCK_PID"' in script
+    assert 'kill -TERM "$LOCK_PID"' not in script

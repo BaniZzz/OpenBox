@@ -114,6 +114,7 @@ async def _local_status(current_user: dict) -> dict:
     return {
         "available": True,
         "version": chrome.get("Browser"),
+        "presentation": state.get("presentation", "headed"),
         "relayRunning": bool(relay),
         "relayMode": relay.get("mode"),
     }

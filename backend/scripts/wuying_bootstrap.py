@@ -280,8 +280,8 @@ def ecs_run(instance: str, region: str, script: str, timeout: int = 300) -> str:
 
 def install_runtime(d: Desktop) -> None:
     print("[1/6] runtime")
-    # Node comes from the npmmirror binary mirror, not NodeSource: from a
-    # mainland VPC, GitHub and NodeSource measure in single-digit KB/s.
+    # Node is supplied by the base image. install_dev_browser validates and
+    # exposes its private runtime before installing any browser dependencies.
     d.run(r"""
 set -e
 export PATH=/usr/local/bin:$PATH
@@ -343,17 +343,20 @@ def install_dev_browser(d: Desktop) -> None:
         cwd=REPO / "container", check=True,
     )
     d.put(tgz, "/tmp/dev-browser.tgz")
-    # PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: the relay only imports hono, and the
-    # client attaches with connectOverCDP, so no bundled browser is ever used.
+    # Prepare a versioned backup of the inherited Chrome gate, expose Node,
+    # and validate TS/CDP dependencies before considering the relay installed.
+    # A piped `npm install | tail` used to hide npm-not-found and report success.
     d.run(r"""
 set -e
-export PATH=/usr/local/bin:$PATH PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
-mkdir -p /opt/openbox/skills
+mkdir -p /opt/openbox/skills /opt/openbox/tools
 rm -rf /opt/openbox/skills/dev-browser
 tar xzf /tmp/dev-browser.tgz -C /opt/openbox/skills 2>/dev/null
-cd /opt/openbox/skills/dev-browser
-npm install --omit=dev --no-audit --no-fund 2>&1 | tail -3
 """, timeout=1200)
+    d.put(REPO / "backend" / "sandbox" / "browser_runtime_repair.py",
+          "/opt/openbox/tools/repair_browser_runtime.py")
+    d.put(REPO / "backend" / "sandbox" / "assets" / "dev-browser-package-lock.json",
+          "/opt/openbox/tools/dev-browser-package-lock.json")
+    d.run("python3 /opt/openbox/tools/repair_browser_runtime.py --install-deps --register-service", timeout=360)
 
 
 def install_services(d: Desktop, api_key: str, relay: str, tunnel_port: int) -> str:
