@@ -69,3 +69,10 @@ def test_image_verifier_requires_empty_user_state():
     assert "check workspace_empty" in script
     assert "check data_has_no_user_files" in script
     assert "OPENBOX_IMAGE_VERIFY_COMPLETE" in script
+
+
+def test_image_verifier_requires_working_browser_and_boot_gate():
+    script = wuying_image_verify.VERIFY_SCRIPT
+    assert 'repair_browser_runtime.py --check' in script
+    assert 'check browser_boot_gate' in script
+    assert 'check action_requires_browser' in script

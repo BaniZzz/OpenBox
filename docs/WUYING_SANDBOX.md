@@ -252,9 +252,21 @@ Recommended values for the current 4-core, 8-GB-class desktop are:
 | `hyperframes_low_memory_mode` | `true` | Forces the safe low-memory profile. |
 | `hyperframes_video_frame_format` | `jpg` | Appropriate for camera footage; use PNG for UI/screen recordings. |
 
-The **dev-browser relay is not** a systemd unit. It is started on demand by
-`POST /dev-browser/start` (the *Enable Dev Browser* button), and does not come
-back on its own after a desktop reboot — press the button again.
+The **dev-browser relay is not** a systemd unit. The backend starts it on demand
+when a browser skill loads, and verifies live CDP/relay endpoints rather than
+trusting an in-memory cache after reboot. `openbox-browser-runtime.service`
+checks/repairs the pinned runtime before the action server starts. Channel
+activation and pool acceptance run the same installer; a failed repair remains
+retryable on the same desktop and cannot report a successful activation.
+
+An unconnected Wuying desktop may have no X session yet. In that case browser
+automation uses a sandboxed, unprivileged headless Chrome with a fresh private
+profile under `/var/lib/openbox/browser`. It does not copy image/user profiles,
+create a competing X display, or require a manual sidebar connection. The API
+reports `presentation: headless`, and browser/computer tool messages explicitly
+state that this browser is not visible in desktop screenshots. Once a browser
+is running, it is reused; connecting the Web SDK never force-closes a headless
+session to switch presentation. Visible desktop availability is a separate check.
 
 ## Operations
 
@@ -320,10 +332,50 @@ The desktop was bootstrapped with `--skip-dev-browser`, or the npm install
 failed. Re-run the bootstrap without that flag.
 
 **Sandbox reachable but browser automation never connects**
-`GET /dev-browser/status` should report `{"status":"running","extensionConnected":true}`.
-`stopped` means nobody pressed *Enable Dev Browser* (or the desktop rebooted).
-`extensionConnected: false` points at the Chrome extension — check its Server URL
-under *Advanced* in the popup.
+First distinguish cloud-local mode from extension mode. On the desktop, local
+mode requires both `http://127.0.0.1:9333/json/version` (Chrome CDP) and
+`http://127.0.0.1:9222/` (relay) to respond. `extensionConnected: false` is normal
+in local mode; it is not evidence that cloud Chrome is broken. In extension
+mode, check the extension's Server URL under *Advanced* in its popup.
+
+On a reused BossIP image, two independent initialization failures can prevent
+local mode from starting:
+
+- The inherited Chrome launcher rewrites OpenBox's dedicated profile to an old
+  worker's directory. If the current desktop user cannot write it, Chrome falls
+  back to its default profile, where Chrome 136+ disables remote debugging.
+- Node/npm exist only under `/opt/bossip/runtime/node/bin`, outside the service
+  PATH, and the relay's `node_modules` are missing. A piped `npm install | tail`
+  formerly masked the installation failure.
+
+`backend/sandbox/browser_runtime_repair.py` repairs these initialization issues without
+restarting services or touching IBus/profile data. It narrowly permits the
+current user's own `.config/obx-chrome` directory through the inherited gate,
+preserves other profile restrictions, exposes missing Node commands without
+overwriting existing ones, and stages/validates dependencies before promotion.
+The bootstrap and backend install it automatically, together with
+`backend/sandbox/assets/dev-browser-package-lock.json`. The repository entry
+point `container/repair_browser_runtime.py` is only a local forwarding CLI;
+upload the standalone backend implementation and its lock file when doing
+manual guest maintenance. On the guest, run as root:
+
+```bash
+python3 /opt/openbox/tools/repair_browser_runtime.py --install-deps --register-service
+python3 /opt/openbox/tools/repair_browser_runtime.py --check
+```
+
+Backups and installation logs stay under `/opt/openbox/backups/browser-runtime-*`.
+Repairs are serialized with a guest file lock. Dependencies use `npm ci` with
+an isolated configuration and disabled install scripts, are validated in a
+staging directory, and roll back if promotion fails. A healthy runtime is a
+no-op; every readiness check still executes TypeScript and imports the runtime.
+Boot service registration does not restart a healthy action server or Chrome.
+If Chrome previously fell back to the default profile, first save pending browser
+work, gracefully close that user's browser, and back up/copy only that user's
+profile into its dedicated directory before relaunching. Never copy a legacy
+worker's login data or loosen another user's directory permissions. Verify CDP,
+relay discovery, and a real `npx tsx` client interaction; an open Chrome window
+alone is not a successful browser-automation check.
 
 ## What differs from the Docker and Kubernetes providers
 

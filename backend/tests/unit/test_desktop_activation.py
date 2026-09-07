@@ -170,6 +170,24 @@ async def test_crash_after_cloud_creation_recovers_tags_without_rebuy(account, m
     assert (await job_for(account)).state == "ready"
 
 
+async def test_browser_runtime_failure_retries_same_desktop_without_repurchase(account):
+    from sandbox.browser_runtime import BrowserRuntimeUnavailable
+    await order_for(account)
+    verify = wuying_channel.verify.side_effect
+    wuying_channel.verify.side_effect = BrowserRuntimeUnavailable('dependency install failed')
+    assert not await DesktopActivationService().process(account.workspace_id)
+    assert (await job_for(account)).state != 'ready'
+    before = await activation.desktops.get_for_workspace(account.workspace_id)
+    assert before['status'] != 'running'
+    wuying_channel.verify.side_effect = verify
+    await make_due(account)
+    assert await DesktopActivationService().process(account.workspace_id)
+    after = await activation.desktops.get_for_workspace(account.workspace_id)
+    assert after['desktop_id'] == before['desktop_id']
+    assert (await job_for(account)).state == 'ready'
+    ecd.create_desktop.assert_awaited_once()
+
+
 async def test_unknown_purchase_result_is_reconciled_not_repeated(account):
     await order_for(account)
     async def timeout(workspace, **kwargs):

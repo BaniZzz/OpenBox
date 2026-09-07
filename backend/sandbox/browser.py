@@ -343,20 +343,28 @@ else
   $SUDO rm -f "$H/.obx-write-probe" 2>/dev/null || true
 fi
 PROF="$H/{CHROME_PROFILE}"
-# Reuse a profile that already exists rather than minting a fresh one.
-#
-# A profile is not scratch state: it carries every logged-in session on the
-# desktop. Switching the launch to the runner's home quietly pointed Chrome at
-# an empty directory, and the desktop came back signed out of everything —
-# the sessions were never lost, just orphaned in the old path. A deployment
-# that keeps per-user homes under /workspace already has the real profile
-# there, so prefer it, most recently used first.
-EXISTING=$(ls -dt /workspace/openbox/users/*/.openbox/home/{CHROME_PROFILE} 2>/dev/null | head -1)
-# Plain -w is enough here: every candidate lives on the writable /workspace,
-# so this is an ownership question, not the read-only-mount trap above.
-if [ -n "$EXISTING" ] && $SUDO test -w "$EXISTING"; then
-  PROF="$EXISTING"
-fi
+# A scoped container may have its own HOME, but never select the newest
+# profile across all users. Only reuse the current execution user's own HOME.
+case "$CURRENT_H" in
+  /workspace/openbox/users/*/.openbox/home)
+    if [ "$CURRENT_U" = "$U" ] && [ "$(stat -c %u "$CURRENT_H")" = "$(id -u "$U")" ]; then
+      H="$CURRENT_H"
+      PROF="$H/{CHROME_PROFILE}"
+    fi
+    ;;
+esac
+# A non-answering CDP port does not prove that Chrome is stopped. Never edit
+# session files underneath a browser that still owns the managed profile.
+if [ -L "$PROF" ]; then echo "refusing symlinked browser profile" >&2; exit 4; fi
+LOCK=$(readlink "$PROF/SingletonLock" 2>/dev/null || true)
+LOCK_PID=${{LOCK##*-}}
+case "$LOCK_PID" in
+  ''|*[!0-9]*) ;;
+  *) if kill -0 "$LOCK_PID" 2>/dev/null; then
+       echo "managed browser profile is in use; refusing to modify or stop it" >&2
+       exit 4
+     fi ;;
+esac
 PREF="$PROF/Default/Preferences"
 if [ -f "$PREF" ]; then
   $SUDO sed -i 's/"exit_type":"[^"]*"/"exit_type":"Normal"/g; s/"exited_cleanly":false/"exited_cleanly":true/g' "$PREF" 2>/dev/null || true
@@ -487,8 +495,45 @@ exit 0
 """
 
 
+def _headless_chrome_launch_script() -> str:
+    """No Web SDK login yet: use a fresh service profile, never image/user data.
+
+This is browser automation readiness, not a visible desktop. It must not
+create a second X server or interfere with Wuying's eventual desktop session.
+"""
+    return f"""set -eu
+U=obx-browser
+H=/var/lib/openbox/browser
+if ! getent passwd "$U" >/dev/null; then
+  [ ! -e "$H" ] && [ ! -L "$H" ]
+  install -d -m 755 /var/lib/openbox
+  /usr/sbin/useradd --system --user-group --home-dir "$H" --no-create-home --shell /usr/sbin/nologin "$U"
+  install -d -m 700 -o "$U" -g "$U" "$H"
+fi
+[ "$(getent passwd "$U" | cut -d: -f6)" = "$H" ]
+[ "$(id -u "$U")" != 0 ]
+[ ! -L "$H" ] && [ "$(stat -c %u "$H")" = "$(id -u "$U")" ]
+BIN=""
+for c in {" ".join(CHROME_CANDIDATES)}; do [ -x "$c" ] && {{ BIN="$c"; break; }}; done
+[ -n "$BIN" ] || {{ echo "no Chrome binary" >&2; exit 3; }}
+PROF="$H/{CHROME_PROFILE}"
+[ ! -L "$PROF" ]
+# No force-close or cleanup of session data, even if a previous launch hung.
+( setsid /usr/sbin/runuser -u "$U" -- env HOME="$H" \\
+  "$BIN" --headless=new --remote-debugging-port={CHROME_PORT} \\
+  --remote-debugging-address=127.0.0.1 --user-data-dir="$PROF" \\
+  --no-first-run --no-default-browser-check --password-store=basic \\
+  --use-mock-keychain --window-size=1920,1080 about:blank \\
+  >{CHROME_LOG} 2>&1 </dev/null & ) >/dev/null 2>&1 </dev/null
+"""
+
+
+def is_headless(chrome: dict | None) -> bool:
+    return any("HeadlessChrome/" in (chrome or {}).get(key, "") for key in ("Browser", "User-Agent"))
+
+
 async def ensure_chrome(client, container_key: str) -> dict:
-    """Launch (or reuse) a headed, debuggable Chrome on the desktop.
+    """Launch (or reuse) debuggable Chrome, headed when an X session exists.
 
     Idempotent: if the debug port already answers we return its /json/version
     verbatim without touching anything. The cache is deliberately *not* trusted
@@ -504,8 +549,14 @@ async def ensure_chrome(client, container_key: str) -> dict:
     await ensure_x_helper(client, container_key)
     # Policy must be on disk before Chrome starts: it is read once at launch.
     await client.execute(_policy_install_script(), timeout=30)
-    log.info("launching headed Chrome with remote debugging on :%d", CHROME_PORT)
-    await _fire_and_forget(client, x("sh -c " + shlex.quote(_chrome_launch_script())))
+    display = await client.execute("obx-x xdpyinfo >/dev/null 2>&1", timeout=10)
+    if display.exit_code == 0:
+        log.info("launching headed Chrome with remote debugging on :%d", CHROME_PORT)
+        command = x("sh -c " + shlex.quote(_chrome_launch_script()))
+    else:
+        log.info("no desktop session yet; launching isolated headless Chrome on :%d", CHROME_PORT)
+        command = _headless_chrome_launch_script()
+    await _fire_and_forget(client, command)
 
     deadline = time.monotonic() + CHROME_READY_BUDGET
     while time.monotonic() < deadline:
@@ -555,8 +606,10 @@ async def ensure_relay(client, container_key: str, mode: str) -> dict:
 
 async def browser_status(client) -> dict:
     """Cheap read-only probe of both endpoints for the API. Never raises."""
+    chrome = await _curl_json(client, _chrome_url("/json/version"))
     return {
-        "chrome": await _curl_json(client, _chrome_url("/json/version")),
+        "chrome": chrome,
+        "presentation": "headless" if is_headless(chrome) else "headed",
         "relay": await _curl_json(client, _relay_url()),
     }
 
@@ -626,6 +679,14 @@ async def ensure_browser(client, container_key: str, mode: str) -> dict:
     skill tool can call this without going through `computer`, so the lock
     belongs at this shared boundary rather than only in one caller.
     """
+    if mode not in _VALID_MODES:
+        raise ValueError(f"mode must be one of {_VALID_MODES}, got {mode!r}")
+    from core.config import get_config
+    if get_config().sandbox_provider == "wuying":
+        from sandbox.browser_runtime import ensure_browser_runtime
+        # Static runtime work does not touch the GUI. Do it before acquiring
+        # the display lease so npm cannot outlive a turn's GUI lease.
+        await ensure_browser_runtime(client)
     lease_factory = getattr(client, "desktop_lease", None)
     if lease_factory is None:
         return await _ensure_browser_locked(client, container_key, mode)

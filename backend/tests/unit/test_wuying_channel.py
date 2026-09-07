@@ -225,6 +225,8 @@ async def test_revoke_releases_port_after_guest_tunnel_stops(monkeypatch):
 
 async def test_install_can_rotate_action_key(monkeypatch):
     import sandbox.channel as channel_module
+    from unittest.mock import AsyncMock
+    monkeypatch.setattr(channel_module, "ensure_desktop_browser_runtime", AsyncMock())
 
     cfg = OpenBoxConfig(
         wuying_channel="direct",

@@ -176,6 +176,9 @@ async def verify_prewarm(desktop_id: str) -> dict[str, Any]:
         "set -eu; hostname; test -x /usr/local/bin/obx-display",
         timeout=60,
     )
+    from sandbox.browser_runtime import ensure_desktop_browser_runtime
+
+    await ensure_desktop_browser_runtime(desktop_id)
     return {"hostname": output.splitlines()[0].strip() if output else ""}
 
 
