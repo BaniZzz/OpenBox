@@ -109,6 +109,17 @@ def verified_result(output: str) -> dict:
 
 
 async def ensure_browser_runtime(client) -> dict:
+    # Some legacy action containers see the guest filesystem read-only. A
+    # healthy runtime must not need a write lock, code upload or systemctl.
+    # Bootstrap/Cloud Assistant still handle repairs before channel activation.
+    checked = await client.execute(
+        "python3 /opt/openbox/tools/repair_browser_runtime.py --check", timeout=45
+    )
+    if checked.exit_code == 0:
+        try:
+            return verified_result(checked.stdout or "")
+        except BrowserRuntimeUnavailable:
+            pass  # An older verifier cannot certify this backend's version.
     result = await client.execute(runtime_install_script(), timeout=350)
     if result.exit_code != 0:
         raise BrowserRuntimeUnavailable(

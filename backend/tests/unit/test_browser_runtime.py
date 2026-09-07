@@ -36,6 +36,17 @@ async def test_successful_current_runtime_is_returned():
     client = SimpleNamespace(execute=AsyncMock(return_value=SimpleNamespace(
         exit_code=0, stdout='diagnostic\n' + json.dumps(data))))
     assert await runtime.ensure_browser_runtime(client) == data
+    client.execute.assert_awaited_once()
+    assert client.execute.await_args.args[0].endswith(' --check')
+
+
+async def test_old_version_check_cannot_skip_runtime_preparation():
+    old = SimpleNamespace(exit_code=0, stdout='{"version":"old","ready":true}')
+    current = SimpleNamespace(exit_code=0, stdout=json.dumps({'version':runtime.RUNTIME_VERSION,'ready':True}))
+    client = SimpleNamespace(execute=AsyncMock(side_effect=[old, current]))
+    assert (await runtime.ensure_browser_runtime(client))['version'] == runtime.RUNTIME_VERSION
+    assert client.execute.await_count == 2
+    assert '--register-service' in client.execute.await_args.args[0]
 
 
 async def test_first_browser_use_checks_runtime_before_taking_gui_lease(monkeypatch):
