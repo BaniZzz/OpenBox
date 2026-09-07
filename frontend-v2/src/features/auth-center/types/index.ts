@@ -25,6 +25,8 @@ export interface PlatformAccount {
   status: AccountStatus
   accessExpiresAt: string | null
   refreshExpiresAt: string | null
+  /** When a new scan will be needed if every automatic renewal succeeds. */
+  estimatedExpiresAt: string | null
   renewCount: number
   renewalsLeft: number
   lastRefreshAt: string | null

@@ -30,11 +30,12 @@
   "account": {
     "unnamed": "未命名账号",
     "openId": "openid {{id}}…",
-    "validUntil": "授权有效至 {{date}}",
+    "validUntil": "当前授权有效至 {{date}}",
     "renewalsLeft_one": "剩余自动续期 {{count}} 次",
     "renewalsLeft_other": "剩余自动续期 {{count}} 次",
     "needsReauth": "需要重新扫码授权",
-    "lastProbe": "上次检测 {{date}}"
+    "lastProbe": "上次检测 {{date}}",
+    "estimatedExpiry": "预计到期 {{date}}（约 {{days}} 天后需重新扫码）"
   },
   "unbind": {
     "title": "解绑这个账号？",

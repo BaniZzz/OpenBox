@@ -30,6 +30,11 @@ function fmt(iso: string | null): string {
   return new Date(iso).toLocaleString()
 }
 
+function fmtDay(iso: string | null): string {
+  if (!iso) return "—"
+  return new Date(iso).toLocaleDateString()
+}
+
 export function AccountRow({ account, canManage, busy, onProbe, onReauthorize, onUnbind }: Props) {
   const { t } = useTranslation("auth-center")
   const refreshDays = daysUntil(account.refreshExpiresAt)
@@ -69,6 +74,14 @@ export function AccountRow({ account, canManage, busy, onProbe, onReauthorize, o
           </span>
         </div>
 
+        {account.status === "bound" ? (
+          <span className="text-ink text-sm">
+            {t("account.estimatedExpiry", {
+              date: fmtDay(account.estimatedExpiresAt ?? account.refreshExpiresAt),
+              days: Math.max(0, daysUntil(account.estimatedExpiresAt ?? account.refreshExpiresAt) ?? 0),
+            })}
+          </span>
+        ) : null}
         <div className="text-n600 flex flex-wrap gap-x-4 gap-y-0.5 text-xs">
           {account.status === "bound" ? (
             <>
