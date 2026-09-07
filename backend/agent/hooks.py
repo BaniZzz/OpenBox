@@ -112,6 +112,10 @@ class ToolHooks:
             else:
                 result = await execute_fn(args, ctx)
         except Exception as e:
+            from sandbox.entitlement import SandboxSubscriptionRequired
+            if isinstance(e, SandboxSubscriptionRequired):
+                return ToolResult(title="Sandbox unavailable", output=e.detail,
+                    metadata={"error": True, **e.payload})
             # Handle plan mode rejection gracefully (not a real error)
             from tool.plan import PlanRejectedError
             from question.question import QuestionRejectedError

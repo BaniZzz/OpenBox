@@ -9,6 +9,7 @@ from db.models.internal_part import InternalPart
 from db.models.permission import PermissionRule
 from db.models.container import Container
 from db.models.cloud_desktop import CloudDesktop
+from db.models.desktop_activation import DesktopActivation
 from db.models.todo import Todo
 from db.models.prompt_history import PromptHistory
 from db.models.file_asset import FileAsset
@@ -28,7 +29,7 @@ import db.models.workspace_scope  # noqa: F401,E402
 
 __all__ = [
     "User", "UserPreference", "Project", "Session", "Message", "Part", "InternalPart",
-    "PermissionRule", "Container", "CloudDesktop", "Todo", "PromptHistory", "FileAsset", "AuditLog",
+    "PermissionRule", "Container", "CloudDesktop", "DesktopActivation", "Todo", "PromptHistory", "FileAsset", "AuditLog",
     "CronJob", "CronRun", "VideoJob", "VideoProduction", "VideoSegment", "VideoApproval",
     "UserSkill", "SkillInstall", "UserMemory", "ImageGenCache",
     "Workspace", "WorkspaceMember", "WorkspaceInvitation", "InternalTaskState",

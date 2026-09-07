@@ -238,6 +238,7 @@ class SandboxClient:
         base_url: str | None = None,
         *,
         user_scope: str | None = None,
+        workspace_id: str | None = None,
         catalogue_ttl_seconds: float = CATALOGUE_CACHE_TTL_SECONDS,
         catalogue_clock: Callable[[], float] | None = None,
     ):
@@ -245,6 +246,7 @@ class SandboxClient:
         # server through a tunnel endpoint rather than a host/port pair.
         self.base_url = base_url.rstrip("/") if base_url else f"http://{host}:{port}"
         self.api_key = api_key
+        self.workspace_id = workspace_id
         self._headers = {"X-API-Key": api_key}
         if user_scope is not None:
             if not _USER_SCOPE_PATTERN.fullmatch(user_scope):
@@ -368,6 +370,11 @@ class SandboxClient:
                 finally:
                     self._trace.reset(lease_context)
 
+    async def _authorize_request(self, request: httpx.Request) -> None:
+        if self.workspace_id is not None:
+            from sandbox.entitlement import require_sandbox_subscription
+            await require_sandbox_subscription(self.workspace_id)
+
     def _client(self, timeout: float = 30.0) -> httpx.AsyncClient:
         """Create an httpx async client.
 
@@ -382,6 +389,7 @@ class SandboxClient:
             headers=self._headers,
             timeout=timeout,
             trust_env=False,
+            event_hooks={"request": [self._authorize_request]} if self.workspace_id is not None else None,
         )
 
     async def execute(
@@ -967,10 +975,9 @@ class SandboxClient:
 
     async def upload_skill_archive(self, file_bytes: bytes, filename: str, name: str = "") -> dict:
         """Upload a skill archive (zip/tar/tar.gz/rar) to the container."""
-        import httpx
         files = {"file": (filename, file_bytes)}
         data = {"name": name or ""}
-        async with httpx.AsyncClient(timeout=90.0, trust_env=False) as client:
+        async with self._client(timeout=90.0) as client:
             url = f"{self.base_url}/skills/upload"
             resp = await client.post(url, files=files, data=data, headers=self._headers)
             if resp.status_code != 200:

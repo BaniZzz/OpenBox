@@ -6,13 +6,14 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import exists, func, select
 
 from core.config import get_config
 from core.identifier import ascending
 from core.log import create_logger
 from db.base import get_db_session
 from db.models.cloud_desktop import CloudDesktop
+from db.models.desktop_activation import DesktopActivation
 from db.models.fleet import FleetAlert, PoolPurchase
 from db.repository.cloud_desktop_repo import cloud_desktop_repo
 from sandbox import wuying_ecd
@@ -431,6 +432,12 @@ class PoolService:
         config = get_config()
         if not config.pool_enabled:
             return {"status": "disabled", "due": [], "renewed": []}
+        from sandbox.entitlement import subscription_sandbox_enabled
+        # Workspace capacity has its own leased, entitlement-aware renewal.
+        # Pool auto-renew must neither double-charge it nor renew a free tenant.
+        managed_filter = [~exists(select(DesktopActivation.workspace_id).where(
+            DesktopActivation.workspace_id == CloudDesktop.workspace_id,
+        ))] if subscription_sandbox_enabled() else []
         deadline = datetime.now(timezone.utc) + timedelta(
             days=config.pool_renew_before_days
         )
@@ -444,6 +451,7 @@ class PoolService:
                             CloudDesktop.charge_type == "PrePaid",
                             CloudDesktop.expires_at.is_not(None),
                             CloudDesktop.expires_at < deadline,
+                            *managed_filter,
                         ).order_by(CloudDesktop.expires_at, CloudDesktop.desktop_id)
                     )
                 ).scalars().all()

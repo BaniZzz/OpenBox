@@ -322,28 +322,6 @@ async def update_session(session_id: str, body: UpdateSessionBody, current_user:
 
 # ─── Messages ───
 
-async def _desktop_route_preflight(current_user: dict):
-    """Return a stable 503 before accepting a turn with no runnable desktop."""
-    from sandbox import provider
-
-    if not provider.routes_per_user:
-        return None
-    from sandbox.ownership import owner_for_request
-    from sandbox.wuying_desktop_service import DesktopNotReady
-
-    try:
-        await provider.resolve_user_container(await owner_for_request(current_user))
-    except DesktopNotReady as exc:
-        return JSONResponse(
-            status_code=503,
-            content={
-                "code": "DESKTOP_NOT_READY",
-                "detail": "Your cloud desktop is not ready",
-                "desktop": exc.payload,
-            },
-        )
-    return None
-
 @router.get("/session/{session_id}/message")
 async def get_messages(session_id: str, offset: int = 0, limit: int = 200, current_user: dict = Depends(get_current_user)):
     user_id = current_user["user_id"]
@@ -367,17 +345,10 @@ async def send_message(
     """Send a message synchronously (blocks until agent completes)."""
     user_id = current_user["user_id"]
     session = await _require_session_owned(session_id, current_user)
-    not_ready = await _desktop_route_preflight(current_user)
-    if not_ready:
-        return not_ready
     if session.status in _ACTIVE_SESSION_STATUSES:
         from session.abort import abort_session_turn
 
         await abort_session_turn(session_id, user_id, reason="preempted")
-
-    # Chat preflight: ensure user sandbox exists.
-    from sandbox.manager import sandbox_manager
-    await sandbox_manager.get_client(session_id, user_id=user_id)
 
     chosen_model = await _remember_model(session, body.model, user_id)
     await _remember_video_model(session, body.video_model, user_id)
@@ -419,9 +390,6 @@ async def send_message_async(
     user_id = current_user["user_id"]
     config = get_config()
     session = await _require_session_owned(session_id, current_user)
-    not_ready = await _desktop_route_preflight(current_user)
-    if not_ready:
-        return not_ready
     if session.status in _ACTIVE_SESSION_STATUSES:
         # The newest instruction wins, as in opencode's cancel(). The marker
         # this leaves is what tells the next turn its predecessor was cut off.
@@ -433,9 +401,8 @@ async def send_message_async(
         # slot. New work on an idle Session must acquire a fresh slot.
         await check_concurrent_agents(user_id, config)
 
-    # Sandbox preflight moved into run_loop — don't block the HTTP response.
-    # The agent loop calls sandbox_manager.get_client() which auto-creates
-    # containers if needed. This lets the response return immediately.
+    # Ordinary LLM turns do not require a sandbox. The loop exposes a normal
+    # tool error when sandbox access is unpaid or still being prepared.
 
     # A model the deployment no longer offers must not reach the provider: it
     # comes back as an opaque "no channel for model X" that the retry layer

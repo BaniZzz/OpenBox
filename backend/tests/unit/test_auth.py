@@ -120,6 +120,12 @@ async def test_ticket_invalid(ticket_cache):
     assert result is None
 
 
+async def test_ticket_preserves_verified_workspace_for_sandbox_websockets(ticket_cache):
+    ticket = await create_ticket("user789", workspace_id="team-workspace")
+    result = await consume_ticket(ticket)
+    assert result["workspace_id"] == "team-workspace"
+
+
 # ── Coded refusals ──
 #
 # The clients pick their copy from `detail.code`; a bare string `detail` leaves

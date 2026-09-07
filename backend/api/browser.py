@@ -57,6 +57,13 @@ async def _existing_client(current_user: dict):
     from sandbox.ownership import owner_for_request
 
     owner = await owner_for_request(current_user)
+    from sandbox import provider
+    if provider.routes_per_user:
+        from sandbox.entitlement import require_sandbox_subscription, SandboxSubscriptionRequired
+        try:
+            await require_sandbox_subscription(owner)
+        except SandboxSubscriptionRequired:
+            return None
     for key, client in sandbox_manager._clients.items():
         sandbox = sandbox_manager._project_map.get(key)
         if sandbox and sandbox.user_id == owner:
@@ -73,6 +80,7 @@ async def _existing_client(current_user: dict):
             api_key=container.api_key or "",
             base_url=getattr(provider, "client_base_url", None),
             user_scope=user_scope_for(current_user["user_id"]),
+            workspace_id=owner if provider.routes_per_user else None,
         )
     except Exception as e:
         log.debug(f"No existing sandbox to inspect: {e}")

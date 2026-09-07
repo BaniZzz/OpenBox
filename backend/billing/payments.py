@@ -308,6 +308,8 @@ async def settle_payment(provider_name: str, receipt: PaidReceipt) -> dict:
             else:
                 post_ledger(db, account, amount=order.credits, kind="topup",
                             reference_id=order.id, key=f"payment:{order.id}")
+            from sandbox.desktop_activation import enqueue_paid_activation
+            await enqueue_paid_activation(db, order)
             await db.flush()  # unique provider/payment-id checked before returning
             return {"accepted": True, "duplicate": False}
     except IntegrityError as exc:

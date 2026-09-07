@@ -133,6 +133,11 @@ async def test_port_allocation_retries_a_cross_worker_unique_conflict(monkeypatc
 
 
 async def test_provider_routes_two_owners_and_rejects_revoked(monkeypatch):
+    # This test isolates channel ownership; subscription enforcement is covered
+    # with real billing records in test_desktop_activation.py.
+    from unittest.mock import AsyncMock
+    import sandbox.entitlement as entitlement
+    monkeypatch.setattr(entitlement, "require_sandbox_subscription", AsyncMock())
     import core.config as config_module
     import sandbox.channel as channel_module
     from sandbox.wuying import WuyingProvider

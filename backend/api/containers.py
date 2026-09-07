@@ -58,6 +58,12 @@ async def create_container(req: CreateContainerRequest, current_user: dict = Dep
     user_id = current_user["user_id"]
     config = get_config()
 
+    if provider.routes_per_user:
+        from sandbox.entitlement import require_sandbox_subscription
+        await require_sandbox_subscription(_owner_id(current_user))
+        raise HTTPException(status_code=409, detail={"code": "DESKTOP_MANAGED_BY_SUBSCRIPTION",
+            "message": "付费成功后云电脑会自动开通，请查看无影云开通进度。"})
+
     existing_list = provider.get_containers_for_user(user_id)
     if existing_list:
         raise HTTPException(status_code=409, detail="Each user can only have one container")
@@ -73,6 +79,15 @@ async def create_container(req: CreateContainerRequest, current_user: dict = Dep
 
 @router.get("", response_model=ContainerListResponse)
 async def list_containers(current_user: dict = Depends(get_current_user)):
+    if provider.routes_per_user:
+        from sandbox.entitlement import SandboxSubscriptionRequired
+        from sandbox.wuying_desktop_service import DesktopNotReady
+        try:
+            container = await provider.resolve_user_container(_owner_id(current_user))
+        except (SandboxSubscriptionRequired, DesktopNotReady):
+            container = None
+        containers = [container] if container else []
+        return ContainerListResponse(containers=containers, total=len(containers))
     containers = provider.get_containers_for_user(current_user["user_id"])
     return ContainerListResponse(containers=containers, total=len(containers))
 

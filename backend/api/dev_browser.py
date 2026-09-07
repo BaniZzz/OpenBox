@@ -114,6 +114,7 @@ async def dev_browser_ws_auto(
     Close codes: 4001=replaced, 4003=auth failed, 4004=no container.
     """
     user_id = "default"
+    ticket_workspace = None
 
     if is_auth_enabled():
         if not ticket:
@@ -127,10 +128,11 @@ async def dev_browser_ws_auto(
             await websocket.close(code=4003, reason="Invalid or expired ticket")
             return
         user_id = user_data["user_id"]
+        ticket_workspace = user_data.get("workspace_id")
 
     from sandbox.ownership import owner_for
 
-    owner = await owner_for(user_id)
+    owner = ticket_workspace or await owner_for(user_id)
     try:
         container = await provider.resolve_user_container(owner)
     except Exception:
@@ -170,6 +172,9 @@ async def dev_browser_ws_auto(
                         msg = await websocket.receive()
                         if msg["type"] == "websocket.disconnect":
                             break
+                        if provider.routes_per_user:
+                            from sandbox.entitlement import require_sandbox_subscription
+                            await require_sandbox_subscription(owner)
                         if "text" in msg and msg["text"]:
                             await container_ws.send(msg["text"])
                         elif "bytes" in msg and msg["bytes"]:
@@ -187,12 +192,17 @@ async def dev_browser_ws_auto(
                 except Exception:
                     pass
 
+            pumps = [asyncio.create_task(ext_to_ctr()), asyncio.create_task(ctr_to_ext())]
+            if provider.routes_per_user:
+                from sandbox.entitlement import watch_sandbox_subscription
+                pumps.append(asyncio.create_task(watch_sandbox_subscription(owner)))
             done, pending = await asyncio.wait(
-                [asyncio.create_task(ext_to_ctr()), asyncio.create_task(ctr_to_ext())],
+                pumps,
                 return_when=asyncio.FIRST_COMPLETED,
             )
             for t in pending:
                 t.cancel()
+            await asyncio.gather(*pumps, return_exceptions=True)
     except Exception as e:
         logger.error(f"Failed to connect to container relay: {e}")
         try:

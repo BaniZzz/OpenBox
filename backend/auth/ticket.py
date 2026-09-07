@@ -20,14 +20,14 @@ def init_ticket_store(cache):
     _cache = cache
 
 
-async def create_ticket(user_id: str, role: str = "user") -> str:
+async def create_ticket(user_id: str, role: str = "user", *, workspace_id: str | None = None) -> str:
     """Create a one-time ticket. Returns the ticket string."""
     if _cache is None:
         raise RuntimeError("Ticket store not initialized")
     ticket = secrets.token_urlsafe(32)
     await _cache.set(
         f"ticket:{ticket}",
-        json.dumps({"user_id": user_id, "role": role}),
+        json.dumps({"user_id": user_id, "role": role, **({"workspace_id": workspace_id} if workspace_id else {})}),
         ttl=30,  # 30 seconds
     )
     return ticket

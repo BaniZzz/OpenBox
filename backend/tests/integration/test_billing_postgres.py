@@ -11,7 +11,7 @@ from uuid import uuid4
 import pytest
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
-from sqlalchemy import func, select, text
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
@@ -27,7 +27,7 @@ from session.session import create_session
 
 
 def create_migrated_schema(connection):
-    billing_tables = {"credit_balances", "credit_ledger", "payment_orders", "usage_events", "billing_subscriptions", "payment_order_requests"}
+    billing_tables = {"credit_balances", "credit_ledger", "payment_orders", "usage_events", "billing_subscriptions", "payment_order_requests", "desktop_activations"}
     base.Base.metadata.create_all(connection, tables=[
         table for table in base.Base.metadata.sorted_tables if table.name not in billing_tables
     ])
@@ -38,6 +38,7 @@ def create_migrated_schema(connection):
         import_module("db.migrations.versions.b9d1f3a5c7e9_subscription_plans").upgrade()
         import_module("db.migrations.versions.c0e2f4a6b8d0_payment_request_aliases").upgrade()
         import_module("db.migrations.versions.d1f3a5b7c9e1_cancel_uncreated_orders").upgrade()
+        import_module("db.migrations.versions.a4b6c8d0e2f5_desktop_activation_outbox").upgrade()
 
 
 @pytest.fixture
@@ -111,7 +112,9 @@ async def test_same_payment_cannot_fund_two_workspaces_even_when_callbacks_race(
         assert await db.scalar(select(func.count()).select_from(CreditLedger)) == 1
 
 
-async def test_subscription_callbacks_grant_once_and_preserve_queued_terms(postgres):
+async def test_subscription_callbacks_grant_once_and_preserve_queued_terms(postgres, monkeypatch):
+    import sandbox.desktop_activation as activation
+    monkeypatch.setattr(activation, "subscription_sandbox_enabled", lambda: True)
     user, _ = await new_account()
 
     async def plan_order(plan_id):
@@ -138,6 +141,38 @@ async def test_subscription_callbacks_grant_once_and_preserve_queued_terms(postg
         assert terms[1].ends_at == terms[2].starts_at
         assert (await db.get(CreditBalance, user["default_workspace_id"])).balance == 280
         assert await db.scalar(select(func.count()).select_from(CreditLedger)) == 1
+        from db.models.desktop_activation import DesktopActivation
+        assert await db.scalar(select(func.count()).select_from(DesktopActivation)) == 1
+        job = await db.get(DesktopActivation, user["default_workspace_id"])
+        assert job.state == "queued" and job.lease_until is None
+
+    async with base.get_db_session() as db:
+        await db.execute(delete(DesktopActivation))  # This test owns its isolated schema.
+    await asyncio.gather(*(activation.DesktopActivationService().backfill() for _ in range(3)))
+    async with base.get_db_session() as db:
+        assert await db.scalar(select(func.count()).select_from(DesktopActivation)) == 1
+
+    # Multiple worker processes contend on a real PostgreSQL UPDATE, not an
+    # in-process lock. Only one may perform the cloud workflow.
+    entered, release = asyncio.Event(), asyncio.Event()
+    calls = []
+    async def advance(self, workspace_id, token):
+        calls.append(token)
+        entered.set()
+        await release.wait()
+        await self._save(workspace_id, token, state="ready", step="ready")
+    monkeypatch.setattr(activation.DesktopActivationService, "_advance", advance)
+    worker = activation.DesktopActivationService()
+    task = asyncio.create_task(worker.process(user["default_workspace_id"]))
+    await entered.wait()
+    try:
+        assert not any(await asyncio.gather(*(
+            activation.DesktopActivationService().process(user["default_workspace_id"]) for _ in range(8)
+        )))
+    finally:
+        release.set()
+        await task
+    assert len(calls) == 1
 
 async def test_different_request_keys_race_to_one_pending_order_and_stay_idempotent(postgres, monkeypatch):
     from billing import providers

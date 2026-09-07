@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { http } from "@/shared/api/http"
 import { DesktopTab } from "./DesktopTab"
 
@@ -56,10 +56,59 @@ describe("DesktopTab", () => {
   })
 
   afterEach(() => {
+    vi.useRealTimers()
     cleanup()
     vi.clearAllMocks()
     vi.unstubAllGlobals()
     delete (window as Window & { Wuying?: unknown }).Wuying
+  })
+
+  it("shows the paid-plan requirement without a ticket or cloud SDK session for free users", async () => {
+    vi.mocked(http.get).mockResolvedValue({
+      state: "subscription_required",
+      entitled: false,
+      retained: true,
+      mode: "per_user",
+    })
+    render(<DesktopTab />)
+    await screen.findByText("activation.subscriptionRequired")
+    expect(createSession).not.toHaveBeenCalled()
+    expect(vi.mocked(http.get).mock.calls.every(([path]) => path === "/api/desktop/status")).toBe(true)
+  })
+
+  it("stops an existing cloud session when its paid subscription expires", async () => {
+    render(<DesktopTab />)
+    await waitFor(() => expect(createSession).toHaveBeenCalledOnce())
+    vi.useFakeTimers()
+    // Re-render is unnecessary: the existing connection's status poll checks
+    // server entitlement, including when the SDK session is already cached.
+    vi.mocked(http.get).mockResolvedValue({
+      state: "subscription_required",
+      entitled: false,
+      mode: "per_user",
+    })
+    // The interval was created with real timers; allow one deterministic tick
+    // by unmounting/remounting under fake timers first.
+    cleanup()
+    vi.mocked(http.get).mockImplementation(async (path) =>
+      path.endsWith("/status")
+        ? { state: "running", entitled: true, mode: "per_user" }
+        : { ticket: "ticket", desktopId: "ecd-test", regionId: "cn-hangzhou" },
+    )
+    await act(async () => {
+      render(<DesktopTab />)
+    })
+    session.stop.mockClear()
+    vi.mocked(http.get).mockResolvedValue({
+      state: "subscription_required",
+      entitled: false,
+      mode: "per_user",
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000)
+    })
+    expect(session.stop).toHaveBeenCalledOnce()
+    expect(screen.getByText("activation.subscriptionRequired")).toBeTruthy()
   })
 
   it("uses an untransformed iframe and the official mouse and IME settings", async () => {

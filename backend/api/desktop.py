@@ -67,7 +67,13 @@ def _per_user() -> bool:
     global _warned_split
 
     config = get_config()
-    if not (config.sandbox_provider == "wuying" and config.wuying_mode == "per_user"):
+    if config.sandbox_provider == "wuying" and getattr(config, "wuying_routing", "shared") == "per_desktop":
+        # Explicit tenant routing must never fall back to shared credentials,
+        # even when provider construction fails or the legacy view flag differs.
+        return True
+    if not (config.sandbox_provider == "wuying" and (
+        config.wuying_mode == "per_user" or getattr(config, "wuying_routing", "shared") == "per_desktop"
+    )):
         return False
 
     from sandbox import get_provider
@@ -165,6 +171,7 @@ async def desktop_ticket(
             wuying_desktop_service,
         )
         from sandbox.wuying_ecd import DesktopOwnershipError
+        from sandbox.entitlement import SandboxSubscriptionRequired
 
         try:
             from sandbox.ownership import owner_for_request
@@ -173,9 +180,11 @@ async def desktop_ticket(
             desktop_id, end_user_id = await wuying_desktop_service.resolve_ticket_target(
                 workspace_id
             )
+        except SandboxSubscriptionRequired as e:
+            return JSONResponse(e.payload, status_code=403)
         except DesktopNotReady as e:
             state = e.payload.get("state")
-            if state in ("creating", "starting", "assigning"):
+            if state in ("creating", "starting", "assigning", "queued", "connecting", "retrying"):
                 return _pending({"pending": True, "state": state})
             return JSONResponse(
                 {
@@ -232,6 +241,10 @@ async def desktop_ticket(
             # DescribeDesktops still lists it. Deleting is the only recovery;
             # the next provision() builds a clean one.
             if _per_user() and any(x in message for x in ("NotFound", "InvalidDesktopId")):
+                from sandbox.entitlement import subscription_sandbox_enabled
+                if subscription_sandbox_enabled():
+                    log.warning("Retained desktop %s ticket unavailable; preserving machine and ownership", desktop_id)
+                    return JSONResponse({"available": False, "reason": "retained_desktop_unavailable"}, status_code=503)
                 from sandbox.wuying_desktop_service import wuying_desktop_service
 
                 log.warning(f"Ticket NotFound for {desktop_id}; releasing ghost desktop")
@@ -253,6 +266,12 @@ async def desktop_ticket(
         status = (body.task_status or "").strip() if body else ""
 
         if ticket:
+            if _per_user():
+                from sandbox.entitlement import require_sandbox_subscription, subscription_sandbox_enabled
+                if subscription_sandbox_enabled():
+                    # Ticket generation can take seconds; recheck just before
+                    # handing the external SDK a credential that bypasses us.
+                    await require_sandbox_subscription(workspace_id)
             return {
                 "ticket": ticket,
                 "desktopId": desktop_id,
