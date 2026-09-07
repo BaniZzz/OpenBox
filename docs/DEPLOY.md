@@ -64,7 +64,12 @@ Logto SSO 的取值另见 [LOGTO_PROD.md](LOGTO_PROD.md)。
 
 ## 一、两套环境
 
-| | 开发（AWS） | 生产（阿里云） |
+> **环境定位（2026-09-07 拍板）**
+> - **AWS（`ai.ueejavelin.org`）= 开发环境**：给开发者自测，随时可能重部署、重置数据，不承诺可用性；执行面走上海共享桌面（`WUYING_MODE=shared`）。
+> - **阿里云 gw2（`ai.bossipai.com.cn`）= 半生产的测试环境**：由内部运营做产品测试，数据与桌面池按生产标准管理（备份、迁移、回滚、告警），但**尚未对外开放**；对外正式上线另行宣布。
+> 两边都从 `main` 构建；先发 AWS 再发 gw2，gw2 部署前看一眼 `.env` 当前 tag，避免互相覆盖。
+
+| | 开发（AWS） | 半生产测试（阿里云） |
 |---|---|---|
 | 域名 | https://ai.ueejavelin.org | https://ai.bossipai.com.cn |
 | 主机 | EC2 `i-0eaae88c8b67d9bb5` `OpenClaw-NewAPI` | ECS `i-uf66pcsepxpc23v5qsts` `openbox-gw2-sh` |
