@@ -6,6 +6,7 @@ import httpx
 
 from auth.middleware import get_current_user
 from db.base import get_db_session
+from db.models.cloud_desktop import CloudDesktop
 from db.models.fleet import FleetAlert, FleetSnapshot
 from db.repository.user_repo import PgUserRepo
 from main import create_app
@@ -73,6 +74,48 @@ async def test_non_admin_cannot_read_fleet():
         "GET", "/api/admin/fleet/pool",
     )
     assert response.status_code == 403
+
+
+async def test_admin_desktop_list_includes_live_ecd_users(monkeypatch):
+    suffix = uuid.uuid4().hex[:10]
+    user = await PgUserRepo().create(
+        id=f"fleet-list-{suffix}", username=f"fleet-list-{suffix}",
+        password_hash="unused", role="admin",
+    )
+    now = datetime.now(timezone.utc)
+    desktop_id = f"ecd-{suffix}"
+    async with get_db_session() as session:
+        session.add(CloudDesktop(
+            id=f"cld-{suffix}", desktop_id=desktop_id,
+            workspace_id=user["default_workspace_id"], user_id=user["id"],
+            end_user_id="obx-live-user",
+            region_id="cn-shanghai", status="running", pool_state="prewarm",
+            tunnel_state="ready", created_at=now, updated_at=now,
+        ))
+
+    from sandbox import wuying_ecd
+
+    async def entitlements(desktop_ids):
+        assert desktop_id in desktop_ids
+        return {desktop_id: ["obx-live-user"]}
+
+    async def end_users(end_user_ids):
+        assert end_user_ids == ["obx-live-user"]
+        return {"obx-live-user": "stale ECD nickname"}
+
+    monkeypatch.setattr(wuying_ecd, "describe_desktop_entitlements", entitlements)
+    monkeypatch.setattr(wuying_ecd, "describe_end_users", end_users)
+    response = await _request(
+        create_app(), {"user_id": user["id"], "role": "admin"},
+        "GET", "/api/admin/fleet/desktops",
+    )
+
+    assert response.status_code == 200
+    row = next(item for item in response.json()["items"] if item["desktop_id"] == desktop_id)
+    assert row["ecd_end_user_ids"] == ["obx-live-user"]
+    assert row["ecd_end_users"] == [{
+        "id": "obx-live-user", "username": user["username"],
+    }]
 
 
 async def test_admin_can_preview_pool_ensure(monkeypatch):

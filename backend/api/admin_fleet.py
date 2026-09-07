@@ -8,9 +8,13 @@ from sqlalchemy import func, or_, select
 from audit import record
 from auth.middleware import require_admin
 from auth.workspace import get_workspace
+from core.log import create_logger
 from db.base import get_db_session
 from db.models.cloud_desktop import CloudDesktop
 from db.models.fleet import FleetAlert, FleetSnapshot, PoolPurchase
+from db.models.user import User
+from db.models.workspace import Workspace
+from sandbox import wuying_ecd
 
 
 router = APIRouter(
@@ -18,6 +22,7 @@ router = APIRouter(
     tags=["admin-fleet"],
     dependencies=[Depends(require_admin), Depends(get_workspace)],
 )
+log = create_logger("api.admin_fleet")
 
 
 def _row(row) -> dict:
@@ -73,11 +78,75 @@ async def list_desktops(
                 stmt.order_by(CloudDesktop.updated_at.desc()).offset(offset).limit(limit)
             )
         ).scalars().all()
+        workspace_ids = {item.workspace_id for item in rows if item.workspace_id}
+        user_ids = {item.user_id for item in rows if item.user_id}
+        workspace_usernames = dict((
+            await session.execute(
+                select(Workspace.id, User.username)
+                .join(User, User.id == Workspace.owner_user_id)
+                .where(Workspace.id.in_(workspace_ids))
+            )
+        ).all()) if workspace_ids else {}
+        user_usernames = dict((
+            await session.execute(
+                select(User.id, User.username).where(User.id.in_(user_ids))
+            )
+        ).all()) if user_ids else {}
+    desktop_ids = [item.desktop_id for item in rows if item.desktop_id]
+    live_entitlements: dict[str, list[str]] | None = None
+    ecd_usernames: dict[str, str | None] = {}
+    try:
+        live_entitlements = await wuying_ecd.describe_desktop_entitlements(desktop_ids)
+    except Exception as exc:
+        log.warning("Failed to read live ECD desktop entitlements: %s", exc)
+    if live_entitlements is not None:
+        end_user_ids = sorted({
+            end_user_id
+            for bindings in live_entitlements.values()
+            for end_user_id in bindings
+        })
+        if end_user_ids:
+            try:
+                ecd_usernames = await wuying_ecd.describe_end_users(end_user_ids)
+            except Exception as exc:
+                log.warning("Failed to read ECD EndUser display names: %s", exc)
+    items = []
+    for item in rows:
+        payload = _row(item)
+        bindings = (
+            live_entitlements.get(item.desktop_id)
+            if live_entitlements is not None and item.desktop_id
+            else None
+        )
+        payload["ecd_end_user_ids"] = bindings
+        local_username = (
+            workspace_usernames.get(item.workspace_id)
+            or user_usernames.get(item.user_id)
+        )
+        expected_end_user_id = (
+            wuying_ecd.eu_id_for(item.workspace_id) if item.workspace_id else None
+        )
+        payload["ecd_end_users"] = (
+            [
+                {
+                    "id": end_user_id,
+                    "username": (
+                        local_username
+                        if end_user_id in {item.end_user_id, expected_end_user_id}
+                        else ecd_usernames.get(end_user_id)
+                    ),
+                }
+                for end_user_id in bindings
+            ]
+            if bindings is not None
+            else None
+        )
+        items.append(payload)
     await record(
         admin["user_id"], admin.get("workspace_id"), "admin.fleet.view_desktops",
         "cloud_desktop", None, {"pool_state": pool_state, "q": q}, request,
     )
-    return {"items": [_row(item) for item in rows], "total": total or 0}
+    return {"items": items, "total": total or 0}
 
 
 @router.get("/pool")

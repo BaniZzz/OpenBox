@@ -396,6 +396,80 @@ async def describe_desktop(desktop_id: str) -> dict[str, Any] | None:
     }
 
 
+async def describe_desktop_entitlements(
+    desktop_ids: list[str],
+) -> dict[str, list[str]]:
+    """Return live ECD EndUser bindings for the requested desktops.
+
+    DescribeDesktops accepts multiple desktop IDs, so the admin fleet page can
+    show authoritative cloud entitlements without making one request per row.
+    Missing desktops are intentionally absent from the result: callers must not
+    confuse "not returned by ECD" with a confirmed empty entitlement list.
+    """
+    from alibabacloud_ecd20200930 import models as ecd_models
+
+    unique_ids = list(dict.fromkeys(
+        desktop_id for desktop_id in desktop_ids if desktop_id
+    ))
+    if not unique_ids:
+        return {}
+    config = get_config()
+    client = ecd_client()
+    result: dict[str, list[str]] = {}
+    for start in range(0, len(unique_ids), 100):
+        batch = unique_ids[start:start + 100]
+        response = await _retry_throttled(
+            lambda batch=batch: client.describe_desktops_async(
+                ecd_models.DescribeDesktopsRequest(
+                    region_id=config.wuying_region_id,
+                    desktop_id=batch,
+                    max_results=100,
+                )
+            ),
+            "DescribeDesktops(entitlements)",
+        )
+        for desktop in getattr(response.body, "desktops", None) or []:
+            result[desktop.desktop_id] = list(
+                getattr(desktop, "end_user_ids", None) or []
+            )
+    return result
+
+
+async def describe_end_users(end_user_ids: list[str]) -> dict[str, str | None]:
+    """Return ECD EndUser IDs and their human-readable names."""
+    from alibabacloud_eds_user20210308 import models as eds_models
+
+    unique_ids = list(dict.fromkeys(
+        end_user_id for end_user_id in end_user_ids if end_user_id
+    ))
+    if not unique_ids:
+        return {}
+    client = eds_user_client()
+    result: dict[str, str | None] = {}
+    for start in range(0, len(unique_ids), 100):
+        batch = unique_ids[start:start + 100]
+        response = await _retry_throttled(
+            lambda batch=batch: client.describe_users_async(
+                eds_models.DescribeUsersRequest(
+                    end_user_ids=batch,
+                    max_results=100,
+                )
+            ),
+            "DescribeUsers(fleet)",
+        )
+        for user in getattr(response.body, "users", None) or []:
+            end_user_id = getattr(user, "end_user_id", None)
+            if not end_user_id:
+                continue
+            display_name = (
+                getattr(user, "real_nick_name", None)
+                or getattr(user, "nick_name", None)
+                or getattr(user, "external_name", None)
+            )
+            result[end_user_id] = display_name if display_name != end_user_id else None
+    return result
+
+
 async def describe_price(
     charge_type: str,
     *,

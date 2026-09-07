@@ -175,11 +175,12 @@ export function FleetPage() {
           <span className="text-xs text-n500">{t("desktops.count", { count: desktops.data!.total })}</span>
         </div>
         <div className="mt-3 overflow-x-auto">
-          <table className="w-full min-w-[900px] text-left text-xs">
+          <table className="w-full min-w-[1050px] text-left text-xs">
             <thead className="text-n500"><tr>
               <th className="pb-2">{t("desktops.id")}</th>
               <th className="pb-2">{t("desktops.state")}</th>
               <th className="pb-2">{t("desktops.owner")}</th>
+              <th className="pb-2">{t("desktops.ecdUsers")}</th>
               <th className="pb-2">{t("desktops.channel")}</th>
               <th className="pb-2">{t("desktops.billing")}</th>
               <th className="pb-2">{t("desktops.expires")}</th>
@@ -191,6 +192,17 @@ export function FleetPage() {
                   <td className="py-2.5 pe-3 font-mono">{desktop.desktop_id ?? desktop.id}</td>
                   <td className="py-2.5 pe-3">{desktop.pool_state} · {desktop.status}</td>
                   <td className="py-2.5 pe-3 font-mono">{desktop.workspace_id ?? "—"}</td>
+                  <td className="py-2.5 pe-3 font-mono">
+                    {desktop.ecd_end_users == null
+                      ? t("desktops.unknown")
+                      : desktop.ecd_end_users.length === 0
+                        ? t("desktops.unbound")
+                        : desktop.ecd_end_users.map((user) => (
+                          <span key={user.id} className="block">
+                            {user.username ? `${user.username} · ` : ""}{user.id}
+                          </span>
+                        ))}
+                  </td>
                   <td className="py-2.5 pe-3">{desktop.tunnel_state}</td>
                   <td className="py-2.5 pe-3">{desktop.charge_type ?? "—"} · {desktop.spec ?? "—"}</td>
                   <td className="py-2.5 pe-3">{date(desktop.expires_at)}</td>

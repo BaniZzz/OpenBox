@@ -168,6 +168,67 @@ async def test_list_fleet_is_paginated_and_rechecks_authoritative_tags(monkeypat
     assert pages.requests[1].next_token == "next"
 
 
+async def test_describe_desktop_entitlements_batches_and_preserves_empty(monkeypatch):
+    class Client:
+        def __init__(self):
+            self.requests = []
+
+        async def describe_desktops_async(self, request):
+            self.requests.append(request)
+            desktops = [
+                SimpleNamespace(
+                    desktop_id=desktop_id,
+                    end_user_ids=["eu-bound"] if desktop_id == "ecd-1" else [],
+                )
+                for desktop_id in request.desktop_id
+                if desktop_id != "ecd-missing"
+            ]
+            return SimpleNamespace(body=SimpleNamespace(desktops=desktops))
+
+    client = Client()
+    monkeypatch.setattr(wuying_ecd, "get_config", lambda: _config())
+    monkeypatch.setattr(wuying_ecd, "ecd_client", lambda: client)
+
+    result = await wuying_ecd.describe_desktop_entitlements(
+        ["ecd-1", "ecd-2", "ecd-1", "ecd-missing"]
+    )
+
+    assert result == {"ecd-1": ["eu-bound"], "ecd-2": []}
+    assert client.requests[0].desktop_id == ["ecd-1", "ecd-2", "ecd-missing"]
+    assert client.requests[0].max_results == 100
+
+
+async def test_describe_end_users_returns_human_readable_names(monkeypatch):
+    class Client:
+        def __init__(self):
+            self.request = None
+
+        async def describe_users_async(self, request):
+            self.request = request
+            users = [
+                SimpleNamespace(
+                    end_user_id="eu-named", real_nick_name="Alice",
+                    nick_name=None, external_name=None,
+                ),
+                SimpleNamespace(
+                    end_user_id="eu-id-only", real_nick_name="eu-id-only",
+                    nick_name=None, external_name=None,
+                ),
+            ]
+            return SimpleNamespace(body=SimpleNamespace(users=users))
+
+    client = Client()
+    monkeypatch.setattr(wuying_ecd, "eds_user_client", lambda: client)
+
+    result = await wuying_ecd.describe_end_users(
+        ["eu-named", "eu-id-only", "eu-named"]
+    )
+
+    assert result == {"eu-named": "Alice", "eu-id-only": None}
+    assert client.request.end_user_ids == ["eu-named", "eu-id-only"]
+    assert client.request.max_results == 100
+
+
 async def test_existing_list_desktops_still_returns_workspace_filtered_rows(monkeypatch):
     desktop = SimpleNamespace(
         desktop_id="ecd-workspace", desktop_name="workspace", desktop_status="Running",

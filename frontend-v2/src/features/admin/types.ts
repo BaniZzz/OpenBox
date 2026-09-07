@@ -1,6 +1,8 @@
 export interface FleetDesktop {
   id: string
   desktop_id?: string | null
+  ecd_end_user_ids?: string[] | null
+  ecd_end_users?: Array<{ id: string; username?: string | null }> | null
   workspace_id?: string | null
   pool_state: string
   status: string
