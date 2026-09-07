@@ -8,6 +8,7 @@ import { useWorkspaceUi } from "../stores/ui"
 import { useProjectsQuery } from "../api/projects"
 import { useSessionsQuery } from "../api/sessions"
 import { paths } from "@/shared/router/paths"
+import { EnvBadge } from "@/shared/ui/EnvBadge"
 
 interface TopbarProps {
   panelOpen: boolean
@@ -77,6 +78,7 @@ export function Topbar({ panelOpen, onTogglePanel, statusSlot }: TopbarProps) {
         <span className="max-w-3/5 flex-none truncate text-lg font-medium">{title}</span>
         <span className="text-n600 min-w-0 flex-none truncate text-sm">{subtitle}</span>
       </div>
+      <EnvBadge />
       {!isSettings && !isResources && !isBilling && statusSlot}
       {session && (
         <button

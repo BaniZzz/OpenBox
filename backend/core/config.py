@@ -444,6 +444,11 @@ class OpenBoxConfig(BaseModel):
     blob_local_path: str = "/opt/openbox/blobs"
     gcs_bucket: str = ""
 
+    # -- Deployment environment label (shown as a badge in the UI) --
+    # "" / "prod" show nothing; "dev" and "staging" render a badge so testers
+    # never mistake a test stack for the real product.
+    app_env: Literal["", "dev", "staging", "prod"] = ""
+
     # -- Authentication / quotas --
     jwt_secret: str = ""
     jwt_access_expire_minutes: int = 15
@@ -710,6 +715,7 @@ def _apply_env_overrides(data: dict) -> dict:
         "blob_azure_container": "BLOB_AZURE_CONTAINER",
         "blob_local_path": "BLOB_LOCAL_PATH",
         "gcs_bucket": "GCS_BUCKET",
+        "app_env": "APP_ENV",
         "jwt_secret": "JWT_SECRET",
         "jwt_access_expire_minutes": "JWT_ACCESS_EXPIRE_MINUTES",
         "jwt_refresh_expire_days": "JWT_REFRESH_EXPIRE_DAYS",

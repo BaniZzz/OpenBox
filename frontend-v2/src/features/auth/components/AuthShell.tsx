@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next"
 import { paths } from "@/shared/router/paths"
 import { BrandMark } from "@/features/auth/components/BrandMark"
 import { LangPill } from "@/features/auth/components/LangPill"
+import { EnvBadge } from "@/shared/ui/EnvBadge"
 import { LoginGrid } from "@/features/auth/components/LoginGrid"
 
 /** Full-page auth chrome: animated grid backdrop, top bar, centered card. */
@@ -15,6 +16,7 @@ export function AuthShell({ children }: { children: ReactNode }) {
 
       <header className="relative z-10 flex h-15.5 flex-none items-center gap-3 px-7.5">
         <BrandMark />
+        <EnvBadge />
         <div className="flex-1" />
         <LangPill />
         <Link to={paths.landing} className="flex-none px-1 text-2xs text-n700 hover:text-ink">
