@@ -282,8 +282,8 @@ Redis：`oauth:state:<state>`（600s）、`douyin:client_token:<client_key>`、`
 **顺带发现（未改）**：`backend/.openbox/skill_jobs.db` 被提交进了 git，且 schema 陈旧（users 无 `default_workspace_id`），单用户模式在干净 checkout 上起不来；建议单独提交把它从仓库移除并加 .gitignore。
 
 ### 9.2 待办（部署与真机）
-1. gw2 `.env` 加 `DOUYIN_CLIENT_KEY / DOUYIN_CLIENT_SECRET / PUBLIC_BASE_URL=https://ai.bossipai.com.cn`（`DOUYIN_REDIRECT_URI` 留空即用默认路径）；`WUYING_CHANNEL_KEY` 已有则不用配 `SECRETS_MASTER_KEY`。
-2. 跑迁移 `a5c0d1e2f3a4`，部署后端与前端。
+1. ✅ 2026-09-07 15:42 已通过云助手把 `PUBLIC_BASE_URL / DOUYIN_CLIENT_KEY / DOUYIN_CLIENT_SECRET` 追加到 gw2 `/opt/openbox/config/backend.env`（备份 `backend.env.bak-20260907154232`；`WUYING_CHANNEL_KEY` 已有，不需要 `SECRETS_MASTER_KEY`；`DOUYIN_REDIRECT_URI` 留空走默认路径）。容器未重启，当时 gw2 镜像为 `20260907-subscription-129e758`，键在下次 `docker compose up -d` 时生效。
+2. 把 `a5-auth-center` 合进 main → EC2 `/opt/openbox/build-main` 构建 → 传 gw2 → `docker compose up -d`（启动自跑迁移 `a5c0d1e2f3a4`）。**部署前看一眼 gw2 `.env` 当前 tag，队友也在直接部署。**
 3. 控制台填授权回调地址与 Webhook 地址（此时 `verify_webhook` 已能回 challenge），勾选 `create_video` 事件。
 4. 按 §6 AC-2 ～ AC-8 真机验收，截图进 `docs/evidence/`。
 5. P2：`platform_publish` 工具 + `douyin-publish` 技能 + `requires-platforms` 阻断。
